@@ -1,0 +1,50 @@
+[
+  {
+    "id": "atk_heavy",
+    "name": "Тяжёлый удар",
+    "type": "attack",
+    "description": "Сильный удар по противнику.",
+    "damage": 50,
+    "enabled": true
+  },
+  {
+    "id": "atk_quick",
+    "name": "Быстрый выпад",
+    "type": "attack",
+    "description": "Быстрая атака.",
+    "damage": 35,
+    "enabled": true
+  },
+  {
+    "id": "def_tower",
+    "name": "Стоячая стена",
+    "type": "defense",
+    "description": "Поглощает входящий урон атаки.",
+    "block": 60,
+    "enabled": true
+  },
+  {
+    "id": "def_buckler",
+    "name": "Баклер",
+    "type": "defense",
+    "description": "Частично блокирует удар.",
+    "block": 40,
+    "enabled": true
+  },
+  {
+    "id": "skill_mend",
+    "name": "Перевязка",
+    "type": "skill",
+    "description": "Восстанавливает здоровье.",
+    "heal": 40,
+    "enabled": true
+  },
+  {
+    "id": "skill_second_wind",
+    "name": "Второе дыхание",
+    "type": "skill",
+    "description": "Небольшое восстановление.",
+    "heal": 25,
+    "enabled": true
+  }
+]

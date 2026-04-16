@@ -5,6 +5,7 @@ import {
   saveBattleConfig,
   type BattleConfig,
 } from '../cardCombat/battleConfig'
+import { openCardDatabaseEditor } from '../cardEditor/cardDbPanel'
 
 const GOLD = '#c9a227'
 
@@ -31,13 +32,18 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5, 0)
 
     this.add
-      .text(450, 100, 'Настройте стартовое HP и длительность хода. Значения сохраняются в браузере.', {
-        fontFamily: 'system-ui,Segoe UI,sans-serif',
-        fontSize: '13px',
-        color: '#8a8298',
-        align: 'center',
-        wordWrap: { width: 760 },
-      })
+      .text(
+        450,
+        100,
+        'Бой: HP и таймер — в localStorage. Колода — в IndexedDB (кнопка ниже) или начальный сид с /data/cards.json.',
+        {
+          fontFamily: 'system-ui,Segoe UI,sans-serif',
+          fontSize: '13px',
+          color: '#8a8298',
+          align: 'center',
+          wordWrap: { width: 760 },
+        }
+      )
       .setOrigin(0.5, 0)
 
     this.hpLabel = this.add
@@ -69,8 +75,25 @@ export class MenuScene extends Phaser.Scene {
       this.refreshLabels()
     }, 5, 60, 1)
 
+    const cardsBtn = this.add
+      .text(450, 372, 'База карт (IndexedDB)…', {
+        fontFamily: 'system-ui,Segoe UI,sans-serif',
+        fontSize: '16px',
+        color: GOLD,
+        backgroundColor: '#1a1528',
+        padding: { left: 20, right: 20, top: 10, bottom: 10 },
+      })
+      .setOrigin(0.5, 0)
+      .setInteractive({ useHandCursor: true })
+
+    cardsBtn.on('pointerover', () => cardsBtn.setStyle({ backgroundColor: '#2a2040' }))
+    cardsBtn.on('pointerout', () => cardsBtn.setStyle({ backgroundColor: '#1a1528' }))
+    cardsBtn.on('pointerdown', () => {
+      void openCardDatabaseEditor()
+    })
+
     const startBtn = this.add
-      .text(450, 400, 'В бой', {
+      .text(450, 452, 'В бой', {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
         fontSize: '22px',
         color: GOLD,

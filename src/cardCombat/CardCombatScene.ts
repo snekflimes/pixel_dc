@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { ALL_CARD_IDS } from './cards'
+import { getEnabledCardIds } from './cards'
 import { Deck } from './deck'
 import { resolveRound } from './resolveRound'
 import type { CardDef, RoundResolution } from './types'
@@ -8,9 +8,6 @@ const LOG_W = 176
 const MAIN_X = LOG_W + 8
 const GOLD = 0xc9a227
 const BG = 0x0b0b12
-const SLOT_COLS = 4
-const PLAY_COL = 1
-
 const TYPE_COLOR: Record<CardDef['type'], number> = {
   attack: 0xcc4444,
   defense: 0x4488cc,
@@ -144,10 +141,11 @@ export class CardCombatScene extends Phaser.Scene {
     this.enemySprite.setFlipX(true)
 
     this.appendLog('Карточный бой: выберите одну из двух карт до конца таймера.')
-    this.appendLog('Панель — две полные линии по 4 слота (как в референсе); активные — в центральных ячейках.')
+    this.appendLog('Две горизонтальные полосы карт на всю ширину (ряд 1 сверху, ряд 2 снизу).')
 
-    this.playerDeck = new Deck(ALL_CARD_IDS, () => Math.random())
-    this.enemyDeck = new Deck(ALL_CARD_IDS, () => Math.random())
+    const pool = [...getEnabledCardIds()]
+    this.playerDeck = new Deck(pool, () => Math.random())
+    this.enemyDeck = new Deck(pool, () => Math.random())
 
     this.startRound()
   }
@@ -241,64 +239,20 @@ export class CardCombatScene extends Phaser.Scene {
     this.redrawHpBars()
   }
 
-  /** Две горизонтальные линии по 4 слота; играбельные карты — в колонке PLAY_COL. */
+  /** Два полноширинных ряда: по одной карте на ряд (вариант выбора — верх или низ). */
   private layoutPlayerCards(): void {
     if (!this.playerHand) return
-    const panelW = this.panelWidth()
-    const gap = 7
-    const slotW = Math.floor((panelW - gap * (SLOT_COLS - 1)) / SLOT_COLS)
-    const slotH = 86
+    const w = this.panelWidth()
+    const h = 96
     const baseY = 312
     const rowGap = 10
 
     for (let row = 0; row < 2; row++) {
-      const y = baseY + row * (slotH + rowGap)
-      for (let col = 0; col < SLOT_COLS; col++) {
-        const x = MAIN_X + col * (slotW + gap)
-        if (col === PLAY_COL) {
-          const card = this.playerHand[row]!
-          const cont = this.buildCardButton(card, x, y, slotW, slotH, row as 0 | 1)
-          this.cardContainers.push(cont)
-        } else {
-          this.cardContainers.push(this.buildEmptySlot(x, y, slotW, slotH, row, col))
-        }
-      }
+      const y = baseY + row * (h + rowGap)
+      const card = this.playerHand[row]!
+      const cont = this.buildCardButton(card, MAIN_X, y, w, h, row as 0 | 1)
+      this.cardContainers.push(cont)
     }
-  }
-
-  private buildEmptySlot(
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    row: number,
-    col: number
-  ): Phaser.GameObjects.Container {
-    const c = this.add.container(x, y)
-    const g = this.add.graphics()
-    g.fillStyle(0x101018, 0.85)
-    g.fillRoundedRect(0, 0, w, h, 8)
-    g.lineStyle(2, 0x3a3528, 0.9)
-    g.strokeRoundedRect(0, 0, w, h, 8)
-    g.lineStyle(1, GOLD, 0.25)
-    g.strokeRoundedRect(2, 2, w - 4, h - 4, 6)
-    const t = this.add
-      .text(w / 2, h / 2, '—', {
-        fontFamily: 'system-ui,Segoe UI,sans-serif',
-        fontSize: '22px',
-        color: '#4a4458',
-      })
-      .setOrigin(0.5, 0.5)
-    const tag = this.add
-      .text(6, 4, `Ряд ${row + 1} · слот ${col + 1}`, {
-        fontFamily: 'system-ui,Segoe UI,sans-serif',
-        fontSize: '9px',
-        color: '#5a5468',
-      })
-      .setOrigin(0, 0)
-    c.add([g, t, tag])
-    c.setSize(w, h)
-    return c
   }
 
   private buildCardButton(

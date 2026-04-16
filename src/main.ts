@@ -1,6 +1,7 @@
 import './style.css'
 import Phaser from 'phaser'
 import { CardCombatScene } from './cardCombat/CardCombatScene'
+import { initCardDatabase } from './cardCombat/cards'
 import { MenuScene } from './menu/MenuScene'
 
 function initTelegram(): void {
@@ -27,8 +28,22 @@ const config: Phaser.Types.Core.GameConfig = {
 
 /** Один Game на страницу: повторный init (редкий двойной import) не копит WebGL/сцены. */
 const g = globalThis as unknown as { __PIXEL_DC_PHASER_GAME__?: Phaser.Game }
-if (g.__PIXEL_DC_PHASER_GAME__) {
-  g.__PIXEL_DC_PHASER_GAME__.destroy(true, false)
-  g.__PIXEL_DC_PHASER_GAME__ = undefined
+
+function startGame(): void {
+  if (g.__PIXEL_DC_PHASER_GAME__) {
+    g.__PIXEL_DC_PHASER_GAME__.destroy(true, false)
+    g.__PIXEL_DC_PHASER_GAME__ = undefined
+  }
+  g.__PIXEL_DC_PHASER_GAME__ = new Phaser.Game(config)
 }
-g.__PIXEL_DC_PHASER_GAME__ = new Phaser.Game(config)
+
+void initCardDatabase()
+  .catch((e) => {
+    console.error(e)
+    window.alert(
+      `Не удалось открыть IndexedDB с картами: ${e instanceof Error ? e.message : String(e)}`
+    )
+  })
+  .finally(() => {
+    startGame()
+  })

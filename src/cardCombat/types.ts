@@ -6,6 +6,8 @@ export interface CardDef {
   name: string
   type: CardType
   description: string
+  /** Если false — карта не попадает в колоду. По умолчанию true. */
+  enabled?: boolean
   /** Для Attack */
   damage?: number
   /** Для Defense — поглощение урона противника при его Attack */
