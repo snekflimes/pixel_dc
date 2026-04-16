@@ -55,8 +55,8 @@ test('PvP host: нет ошибки server-error после запуска сц�
     console.error('[pageerror]', e)
   })
 
-  await page.goto(`/pixeldc/`, { waitUntil: 'load', timeout: 60_000 })
-  await page.waitForSelector('#app canvas', { timeout: 90_000 })
+  await page.goto(`/`, { waitUntil: 'load', timeout: 60_000 })
+  await page.waitForSelector('#app canvas', { state: 'attached', timeout: 90_000 })
   await page.waitForFunction(
     () =>
       !!(globalThis as unknown as { __PIXEL_DC_PHASER_GAME__?: unknown }).__PIXEL_DC_PHASER_GAME__,

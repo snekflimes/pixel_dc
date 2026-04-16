@@ -15,8 +15,9 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
     command: 'npm run preview:e2e',
-    url: 'http://127.0.0.1:4173/pixeldc/',
-    reuseExistingServer: !process.env.CI,
+    url: 'http://127.0.0.1:4173/',
+    // Иначе после npm run build:e2e Playwright поднимет старый preview с другим хешем чанков → 404 на .js.
+    reuseExistingServer: process.env.PW_REUSE_PREVIEW === '1',
     timeout: 60_000,
   },
 })

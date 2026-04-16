@@ -14,7 +14,8 @@ function initTelegram(): void {
 initTelegram()
 
 const config: Phaser.Types.Core.GameConfig = {
-  type: Phaser.AUTO,
+  /** В headless Playwright WebGL иногда не даёт canvas — режим e2e собираем с Phaser.CANVAS. */
+  type: import.meta.env.MODE === 'e2e' ? Phaser.CANVAS : Phaser.AUTO,
   parent: 'app',
   width: 900,
   height: 560,

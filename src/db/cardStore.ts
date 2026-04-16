@@ -61,7 +61,8 @@ export function parseCardsJson(text: string): CardDef[] {
 
 async function loadSeedFromNetwork(): Promise<CardDef[] | null> {
   try {
-    const r = await fetch('/data/cards.json', { cache: 'no-store' })
+    const path = `${import.meta.env.BASE_URL}data/cards.json`
+    const r = await fetch(path, { cache: 'no-store' })
     if (!r.ok) return null
     const data = (await r.json()) as unknown
     if (!Array.isArray(data)) return null
