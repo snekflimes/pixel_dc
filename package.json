@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "peer:signal": "node scripts/peer-signal.mjs"
   },
   "devDependencies": {
+    "peer": "^1.0.2",
     "typescript": "~5.9.3",
     "vite": "^8.0.0"
   },
