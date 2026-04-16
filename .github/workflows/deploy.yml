@@ -26,6 +26,12 @@ jobs:
         run: npm ci
 
       - name: Build
+        env:
+          VITE_PEERJS_HOST: ${{ vars.VITE_PEERJS_HOST }}
+          VITE_PEERJS_PORT: ${{ vars.VITE_PEERJS_PORT }}
+          VITE_PEERJS_PATH: ${{ vars.VITE_PEERJS_PATH }}
+          VITE_PEERJS_KEY: ${{ vars.VITE_PEERJS_KEY }}
+          VITE_PEERJS_SECURE: ${{ vars.VITE_PEERJS_SECURE }}
         run: npm run build
 
       - name: Deploy via FTP

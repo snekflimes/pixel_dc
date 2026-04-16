@@ -1,0 +1,7 @@
+{
+  "host": "peer.example.com",
+  "port": 443,
+  "path": "/",
+  "secure": true,
+  "key": "peerjs"
+}

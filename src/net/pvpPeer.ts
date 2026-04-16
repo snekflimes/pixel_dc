@@ -27,8 +27,7 @@ export function peerCloudOptions(): PeerJSOption {
 }
 
 /**
- * Сборка: задайте VITE_PEERJS_* (см. .env.example), иначе используется облако.
- * Для продакшена рекомендуется свой PeerServer на VPS рядом с сайтом.
+ * Сборка: задайте VITE_PEERJS_* (см. .env.example), иначе — облако или запрос peer-config.json.
  */
 export function peerRuntimeOptions(): PeerJSOption {
   const host = import.meta.env.VITE_PEERJS_HOST?.trim()
@@ -51,13 +50,63 @@ export function peerRuntimeOptions(): PeerJSOption {
   }
 }
 
+let peerOptionsPromise: Promise<PeerJSOption> | null = null
+
+/**
+ * Порядок: 1) VITE_PEERJS_* при сборке; 2) GET peer-config.json рядом с приложением (FTP без пересборки);
+ * 3) облако PeerJS (часто падает).
+ */
+export function loadPeerClientOptions(): Promise<PeerJSOption> {
+  if (!peerOptionsPromise) {
+    peerOptionsPromise = loadPeerClientOptionsOnce()
+  }
+  return peerOptionsPromise
+}
+
+async function loadPeerClientOptionsOnce(): Promise<PeerJSOption> {
+  const envHost = import.meta.env.VITE_PEERJS_HOST?.trim()
+  if (envHost) {
+    return peerRuntimeOptions()
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      const configUrl = new URL('peer-config.json', `${window.location.origin}${import.meta.env.BASE_URL}`)
+      const res = await fetch(configUrl.href, { cache: 'no-store' })
+      if (res.ok) {
+        const j = (await res.json()) as Record<string, unknown>
+        const h = typeof j.host === 'string' ? j.host.trim() : ''
+        if (h) {
+          const port =
+            typeof j.port === 'number' && Number.isFinite(j.port) ? j.port : 443
+          const pathStr = typeof j.path === 'string' && j.path ? j.path : '/'
+          const key = typeof j.key === 'string' && j.key ? j.key : 'peerjs'
+          const defaultSecure = h !== 'localhost' && h !== '127.0.0.1'
+          const secure =
+            typeof j.secure === 'boolean' ? j.secure : defaultSecure
+          return {
+            host: h,
+            port,
+            path: pathStr,
+            secure,
+            key,
+            config: util.defaultConfig,
+          }
+        }
+      }
+    } catch {
+      /* сеть / парсинг JSON */
+    }
+  }
+  return peerCloudOptions()
+}
+
 /** PeerJS часто кидает PeerError с пустым message — для алерта показываем type и тело. */
 export function formatPvpError(e: unknown): string {
   if (e instanceof PeerError) {
     const msg = (e.message && e.message.trim()) || ''
     const head = msg ? `${e.type}: ${msg}` : String(e.type)
     if (e.type === 'server-error') {
-      return `${head}. Облачный брокер недоступен. Укажите VITE_PEERJS_* при сборке и поднимите PeerServer (npm run peer:signal или см. .env.example).`
+      return `${head}. Нужен свой PeerServer: файл peer-config.json в каталоге сайта, либо переменные VITE_PEERJS_* в GitHub Actions / .env (см. .env.example).`
     }
     return head
   }
@@ -93,9 +142,10 @@ export function parsePvpData(raw: unknown): PvpPickMsg | null {
 }
 
 /** Хост: новый Peer, возвращает id комнаты для второго игрока. */
-export function createHostPeer(): Promise<{ peer: Peer; id: string }> {
+export async function createHostPeer(): Promise<{ peer: Peer; id: string }> {
+  const opts = await loadPeerClientOptions()
   return new Promise((resolve, reject) => {
-    const peer = new Peer(peerRuntimeOptions())
+    const peer = new Peer(opts)
     const t = window.setTimeout(() => {
       peer.destroy()
       reject(new Error('Тайм-аут PeerJS (проверьте сеть или блокировщик)'))
@@ -120,9 +170,13 @@ export function waitForConnection(peer: Peer): Promise<DataConnection> {
 }
 
 /** Клиент: подключается к id хоста. */
-export function createClientAndConnect(hostId: string): Promise<{ peer: Peer; conn: DataConnection }> {
+export async function createClientAndConnect(hostId: string): Promise<{
+  peer: Peer
+  conn: DataConnection
+}> {
+  const opts = await loadPeerClientOptions()
   return new Promise((resolve, reject) => {
-    const peer = new Peer(peerRuntimeOptions())
+    const peer = new Peer(opts)
     peer.on('error', reject)
     peer.on('open', () => {
       const conn = peer.connect(hostId.trim(), { reliable: true })
