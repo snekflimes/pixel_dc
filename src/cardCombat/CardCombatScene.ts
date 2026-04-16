@@ -7,6 +7,7 @@ import type { CardDef, RoundResolution } from './types'
 import {
   createClientAndConnect,
   createHostPeer,
+  formatPvpError,
   parsePvpData,
   waitForConnection,
   type PvpPickMsg,
@@ -237,7 +238,8 @@ export class CardCombatScene extends Phaser.Scene {
         this.arenaText.setText('Подключено.\nВыберите карту в активном столбце.')
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
+      console.error('[PvP]', e)
+      const msg = formatPvpError(e)
       window.alert(`PvP: ошибка — ${msg}`)
       this.scene.start('MainMenu')
     }
@@ -284,11 +286,9 @@ export class CardCombatScene extends Phaser.Scene {
 
   private updateTimerDisplay(): void {
     const s = Math.max(0, this.remainingSec)
-    const whole = Math.floor(s)
-    const frac = Math.floor((s - whole) * 100)
-    this.timerText.setText(
-      `${whole.toString().padStart(2, '0')}:${frac.toString().padStart(2, '0')}`
-    )
+    const m = Math.floor(s / 60)
+    const sec = Math.floor(s % 60)
+    this.timerText.setText(`${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`)
   }
 
   private redrawHpBars(): void {
