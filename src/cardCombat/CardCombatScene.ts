@@ -1,14 +1,21 @@
 import Phaser from 'phaser'
-import { getEnabledCardIds } from './cards'
+import Peer, { type DataConnection } from 'peerjs'
+import { getCardById, getEnabledCardIds } from './cards'
 import { Deck } from './deck'
 import { resolveRound } from './resolveRound'
 import type { CardDef, RoundResolution } from './types'
+import {
+  createClientAndConnect,
+  createHostPeer,
+  parsePvpData,
+  waitForConnection,
+  type PvpPickMsg,
+} from '../net/pvpPeer'
 
 const LOG_W = 176
 const MAIN_X = LOG_W + 8
 const GOLD = 0xc9a227
 const BG = 0x0b0b12
-/** Сколько карточек в одной горизонтальной линии (как в «Джаггернауте»). */
 const SLOTS_PER_ROW = 4
 
 const TYPE_COLOR: Record<CardDef['type'], number> = {
@@ -18,6 +25,7 @@ const TYPE_COLOR: Record<CardDef['type'], number> = {
 }
 
 type Phase = 'select' | 'resolve' | 'ended'
+type BattleMode = 'ai' | 'pvp_host' | 'pvp_client'
 
 export class CardCombatScene extends Phaser.Scene {
   private playerDeck!: Deck
@@ -27,12 +35,24 @@ export class CardCombatScene extends Phaser.Scene {
   private playerHp = 100
   private enemyHp = 100
 
-  private playerHand: [CardDef, CardDef] | null = null
-  private enemyHand: [CardDef, CardDef] | null = null
+  private playerGrid: CardDef[][] | null = null
+  private enemyGrid: CardDef[][] | null = null
+
+  /** Номер раунда; активный столбец = roundIndex % 4 (слева направо). */
+  private roundIndex = 0
 
   private phase: Phase = 'select'
   private choiceLocked = false
   private remainingSec = 15
+
+  private mode: BattleMode = 'ai'
+  private hostPeerIdForClient = ''
+
+  private peer: Peer | null = null
+  private pvpConn: DataConnection | null = null
+  /** Локальный выбор строки в PvP (ожидание соперника). */
+  private pvpLocalRow: 0 | 1 | null = null
+  private pvpRemote: { row: 0 | 1; cardId: string } | null = null
 
   private logLines: string[] = []
   private logText!: Phaser.GameObjects.Text
@@ -44,20 +64,30 @@ export class CardCombatScene extends Phaser.Scene {
   private enemyHpBar!: Phaser.GameObjects.Graphics
 
   private cardContainers: Phaser.GameObjects.Container[] = []
+  private columnHighlight: Phaser.GameObjects.Graphics | null = null
   private playerSprite!: Phaser.GameObjects.Image
   private enemySprite!: Phaser.GameObjects.Image
   private menuBtn?: Phaser.GameObjects.Text
-  /** В какой колонке (0…3) лежит играбельная карта в верхнем и нижнем ряду — каждый раунд случайно. */
-  private handSlotCol: [number, number] = [1, 2]
 
   constructor() {
     super({ key: 'CardCombat' })
   }
 
-  init(data?: { startHp?: number; turnSeconds?: number }): void {
+  private get activeCol(): number {
+    return this.roundIndex % SLOTS_PER_ROW
+  }
+
+  init(data?: {
+    startHp?: number
+    turnSeconds?: number
+    mode?: BattleMode
+    hostPeerId?: string
+  }): void {
     this.maxHp = Math.round(Phaser.Math.Clamp(data?.startHp ?? 12, 4, 48))
     this.turnSeconds = Math.round(Phaser.Math.Clamp(data?.turnSeconds ?? 15, 5, 60))
     this.remainingSec = this.turnSeconds
+    this.mode = data?.mode ?? 'ai'
+    this.hostPeerIdForClient = data?.hostPeerId ?? ''
   }
 
   preload(): void {
@@ -90,6 +120,7 @@ export class CardCombatScene extends Phaser.Scene {
     this.playerHp = this.maxHp
     this.enemyHp = this.maxHp
     this.phase = 'select'
+    this.roundIndex = 0
 
     this.cameras.main.setBackgroundColor(BG)
 
@@ -145,18 +176,94 @@ export class CardCombatScene extends Phaser.Scene {
     this.enemySprite = this.add.image(MAIN_X + 560, 155, 'spr_enemy').setDepth(2)
     this.enemySprite.setFlipX(true)
 
-    this.appendLog('Карточный бой: выберите верхнюю или нижнюю карту до конца таймера.')
-    this.appendLog('Две линии по четыре слота: открытая карта и рубашки колоды в духе референса.')
+    this.appendLog('Карточный бой: сетка 2×4 — все карты открыты.')
+    this.appendLog(
+      'Активный столбец идёт слева направо (1 → 4). Выберите верхнюю или нижнюю карту в подсвеченном столбце.'
+    )
+
+    if (this.mode !== 'ai') {
+      this.appendLog(
+        this.mode === 'pvp_host'
+          ? 'PvP: создаётся комната… Дождитесь кода и второго игрока.'
+          : 'PvP: подключение к хосту…'
+      )
+    }
 
     const pool = [...getEnabledCardIds()]
     this.playerDeck = new Deck(pool, () => Math.random())
     this.enemyDeck = new Deck(pool, () => Math.random())
 
-    this.startRound()
+    this.events.once('shutdown', () => this.destroyPvpPeer())
+
+    void this.bootPvpIfNeeded().then(() => {
+      this.startRound()
+    })
+  }
+
+  private destroyPvpPeer(): void {
+    try {
+      this.pvpConn?.removeAllListeners?.('data')
+    } catch {
+      /* ignore */
+    }
+    this.pvpConn?.close()
+    this.pvpConn = null
+    this.peer?.destroy()
+    this.peer = null
+  }
+
+  private async bootPvpIfNeeded(): Promise<void> {
+    if (this.mode === 'ai') return
+    try {
+      if (this.mode === 'pvp_host') {
+        const { peer, id } = await createHostPeer()
+        this.peer = peer
+        this.appendLog(`PvP: ваш код комнаты (отдайте второму игроку): ${id}`)
+        this.arenaText.setText(`Код комнаты: ${id}\nОжидаем подключения…`)
+        const conn = await waitForConnection(peer)
+        this.pvpConn = conn
+        this.setupPvpDataHandler(conn)
+        this.appendLog('PvP: соперник подключён.')
+        this.arenaText.setText('Соперник на связи.\nВыберите карту в активном столбце.')
+      } else {
+        if (!this.hostPeerIdForClient.trim()) {
+          throw new Error('Не указан код комнаты хоста')
+        }
+        const { peer, conn } = await createClientAndConnect(this.hostPeerIdForClient)
+        this.peer = peer
+        this.pvpConn = conn
+        this.setupPvpDataHandler(conn)
+        this.appendLog('PvP: подключено к хосту.')
+        this.arenaText.setText('Подключено.\nВыберите карту в активном столбце.')
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      window.alert(`PvP: ошибка — ${msg}`)
+      this.scene.start('MainMenu')
+    }
+  }
+
+  private setupPvpDataHandler(conn: DataConnection): void {
+    conn.on('data', (data: unknown) => {
+      const raw = typeof data === 'string' ? (JSON.parse(data) as unknown) : data
+      const m = parsePvpData(raw)
+      if (!m) return
+      if (m.round !== this.roundIndex) return
+      this.pvpRemote = { row: m.row, cardId: m.cardId }
+      this.tryFinishPvpRound()
+    })
+  }
+
+  private sendPvpPick(msg: PvpPickMsg): void {
+    const s = JSON.stringify(msg)
+    this.pvpConn?.send(s)
   }
 
   update(_time: number, delta: number): void {
     if (this.phase !== 'select' || this.choiceLocked) return
+    if (this.mode !== 'ai' && this.pvpLocalRow !== null && this.pvpRemote === null) {
+      return
+    }
     this.remainingSec -= delta / 1000
     if (this.remainingSec <= 0) {
       this.remainingSec = 0
@@ -217,6 +324,8 @@ export class CardCombatScene extends Phaser.Scene {
       c.destroy(true)
     }
     this.cardContainers = []
+    this.columnHighlight?.destroy()
+    this.columnHighlight = null
   }
 
   private panelWidth(): number {
@@ -234,95 +343,55 @@ export class CardCombatScene extends Phaser.Scene {
     this.remainingSec = this.turnSeconds
     this.updateTimerDisplay()
 
-    this.playerHand = this.playerDeck.drawTwo()
-    this.enemyHand = this.enemyDeck.drawTwo()
-    this.pickHandSlotColumns()
+    this.pvpLocalRow = null
+    this.pvpRemote = null
+
+    const pFlat = this.playerDeck.drawEight()
+    const eFlat = this.enemyDeck.drawEight()
+    this.playerGrid = this.playerDeck.toGrid(pFlat)
+    this.enemyGrid = this.enemyDeck.toGrid(eFlat)
 
     this.clearCardPanel()
-    this.arenaText.setText('Выберите карту.\nКарты противника скрыты.')
+
+    const col = this.activeCol
+    this.arenaText.setText(
+      `Столбец ${col + 1} из 4 (ход слева направо).\nВыберите верхнюю или нижнюю карту в золотой подсветке.`
+    )
 
     this.layoutPlayerCards()
     this.redrawHpBars()
   }
 
-  /** Две линейки по SLOTS_PER_ROW слотов; играбельная карта — в handSlotCol[row], остальное — рубашки. */
   private layoutPlayerCards(): void {
-    if (!this.playerHand) return
+    if (!this.playerGrid) return
     const panelW = this.panelWidth()
     const gap = 6
     const slotW = Math.floor((panelW - gap * (SLOTS_PER_ROW - 1)) / SLOTS_PER_ROW)
     const slotH = 102
     const baseY = 276
     const rowGap = 10
+    const ac = this.activeCol
+
+    const hl = this.add.graphics()
+    const x0 = MAIN_X + ac * (slotW + gap)
+    hl.fillStyle(0xc9a227, 0.16)
+    hl.fillRoundedRect(x0 - 3, baseY - 3, slotW + 6, (slotH + rowGap) * 2 + slotH + 6, 10)
+    hl.lineStyle(2, GOLD, 0.55)
+    hl.strokeRoundedRect(x0 - 3, baseY - 3, slotW + 6, (slotH + rowGap) * 2 + slotH + 6, 10)
+    hl.setDepth(0)
+    this.columnHighlight = hl
 
     for (let row = 0; row < 2; row++) {
       const y = baseY + row * (slotH + rowGap)
-      const playCol = this.handSlotCol[row]!
       for (let col = 0; col < SLOTS_PER_ROW; col++) {
         const x = MAIN_X + col * (slotW + gap)
-        if (col === playCol) {
-          const card = this.playerHand[row]!
-          this.cardContainers.push(
-            this.buildCardButton(card, x, y, slotW, slotH, row as 0 | 1)
-          )
-        } else {
-          this.cardContainers.push(this.buildDeckBackSlot(x, y, slotW, slotH, row, col))
-        }
+        const card = this.playerGrid[row]![col]!
+        const playable = col === ac
+        this.cardContainers.push(
+          this.buildCardButton(card, x, y, slotW, slotH, row as 0 | 1, col, playable)
+        )
       }
     }
-  }
-
-  private pickHandSlotColumns(): void {
-    const c0 = Phaser.Math.Between(0, SLOTS_PER_ROW - 1)
-    let c1 = Phaser.Math.Between(0, SLOTS_PER_ROW - 1)
-    if (c1 === c0) {
-      c1 = (c0 + 1 + Phaser.Math.Between(0, SLOTS_PER_ROW - 2)) % SLOTS_PER_ROW
-    }
-    this.handSlotCol = [c0, c1]
-  }
-
-  private buildDeckBackSlot(
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    row: number,
-    col: number
-  ): Phaser.GameObjects.Container {
-    const c = this.add.container(x, y)
-    const g = this.add.graphics()
-    g.fillStyle(0x14101c, 1)
-    g.fillRoundedRect(0, 0, w, h, 8)
-    g.lineStyle(2, 0x7a6630, 0.95)
-    g.strokeRoundedRect(0, 0, w, h, 8)
-    g.lineStyle(1, 0x4a3a22, 0.35)
-    for (let i = -h; i < w + h; i += 10) {
-      g.lineBetween(i, 0, i + h, h)
-    }
-    const mark = this.add
-      .text(w / 2, h / 2 - 6, '✦', {
-        fontFamily: 'system-ui,Segoe UI,sans-serif',
-        fontSize: `${Math.min(26, w / 5)}px`,
-        color: '#8a7540',
-      })
-      .setOrigin(0.5, 0.5)
-    const lab = this.add
-      .text(w / 2, h - 20, 'рубашка', {
-        fontFamily: 'system-ui,Segoe UI,sans-serif',
-        fontSize: '9px',
-        color: '#5a5468',
-      })
-      .setOrigin(0.5, 0)
-    const tag = this.add
-      .text(6, 4, `${row + 1} · ${col + 1}`, {
-        fontFamily: 'system-ui,Segoe UI,sans-serif',
-        fontSize: '9px',
-        color: '#4a4558',
-      })
-      .setOrigin(0, 0)
-    c.add([g, mark, lab, tag])
-    c.setSize(w, h)
-    return c
   }
 
   private buildCardButton(
@@ -331,16 +400,24 @@ export class CardCombatScene extends Phaser.Scene {
     y: number,
     w: number,
     h: number,
-    index: 0 | 1
+    row: 0 | 1,
+    col: number,
+    playable: boolean
   ): Phaser.GameObjects.Container {
     const container = this.add.container(x, y)
+    if (!playable) {
+      container.setAlpha(0.38)
+    }
 
     const bg = this.add.graphics()
     const drawBg = (hover: boolean) => {
       bg.clear()
-      bg.fillStyle(hover ? 0x242432 : 0x1a1a24, 1)
+      const fill = !playable ? 0x121018 : hover ? 0x242432 : 0x1a1a24
+      bg.fillStyle(fill, 1)
       bg.fillRoundedRect(0, 0, w, h, 8)
-      bg.lineStyle(3, TYPE_COLOR[card.type], 1)
+      const lineW = playable ? 3 : 1
+      const colStroke = playable ? TYPE_COLOR[card.type] : 0x3a3a48
+      bg.lineStyle(lineW, colStroke, playable ? 1 : 0.5)
       bg.strokeRoundedRect(0, 0, w, h, 8)
     }
     drawBg(false)
@@ -379,23 +456,25 @@ export class CardCombatScene extends Phaser.Scene {
         fontSize: compact ? '9px' : '10px',
         color: '#8a8298',
         wordWrap: { width: w - 12 },
-        maxLines: compact ? 3 : 3,
+        maxLines: 3,
       })
       .setOrigin(0, 0)
 
     const rowTag = this.add
-      .text(w - 4, 4, `Ряд ${index + 1}`, {
+      .text(w - 4, 4, `Ряд ${row + 1} · ${col + 1}`, {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
         fontSize: '9px',
-        color: '#c9a227',
+        color: playable ? '#c9a227' : '#5a5468',
       })
       .setOrigin(1, 0)
 
     const hit = this.add.rectangle(w / 2, h / 2, w, h, 0x000000, 0)
-    hit.setInteractive({ useHandCursor: true })
-    hit.on('pointerover', () => drawBg(true))
-    hit.on('pointerout', () => drawBg(false))
-    hit.on('pointerdown', () => this.onPlayerPick(index))
+    if (playable) {
+      hit.setInteractive({ useHandCursor: true })
+      hit.on('pointerover', () => drawBg(true))
+      hit.on('pointerout', () => drawBg(false))
+      hit.on('pointerdown', () => this.onPlayerPick(row))
+    }
 
     container.add([bg, title, meta, desc, rowTag, hit])
     container.setSize(w, h)
@@ -404,30 +483,87 @@ export class CardCombatScene extends Phaser.Scene {
 
   private onTimeout(): void {
     if (this.phase !== 'select' || this.choiceLocked) return
+    if (this.mode !== 'ai' && this.pvpLocalRow !== null) return
     const pick = (Math.random() < 0.5 ? 0 : 1) as 0 | 1
-    this.appendLog(`Тайм-аут: случайная карта (ряд ${pick + 1}).`)
-    this.finishRound(pick)
+    this.appendLog(`Тайм-аут: случайный ряд ${pick + 1}.`)
+    this.commitPlayerPick(pick)
   }
 
-  private onPlayerPick(index: 0 | 1): void {
-    if (this.phase !== 'select' || this.choiceLocked) return
-    this.finishRound(index)
-  }
-
-  private finishRound(playerPick: 0 | 1): void {
-    if (this.phase !== 'select' || this.choiceLocked || !this.playerHand || !this.enemyHand) {
+  private onPlayerPick(row: 0 | 1): void {
+    if (this.phase !== 'select') return
+    if (this.mode !== 'ai') {
+      if (this.pvpLocalRow !== null || !this.pvpConn) return
+    } else if (this.choiceLocked) {
       return
     }
+    this.commitPlayerPick(row)
+  }
+
+  private commitPlayerPick(row: 0 | 1): void {
+    if (this.mode !== 'ai') {
+      if (!this.playerGrid || !this.pvpConn) return
+      this.pvpLocalRow = row
+      const card = this.playerGrid[row]![this.activeCol]!
+      this.sendPvpPick({
+        type: 'pick',
+        round: this.roundIndex,
+        row,
+        cardId: card.id,
+      })
+      this.tryFinishPvpRound()
+      return
+    }
+    if (this.choiceLocked) return
+    this.finishRoundAi(row)
+  }
+
+  private tryFinishPvpRound(): void {
+    if (this.mode === 'ai') return
+    if (this.phase !== 'select') return
+    if (this.pvpLocalRow === null || !this.pvpRemote || !this.playerGrid || !this.enemyGrid) {
+      return
+    }
+    if (this.choiceLocked) return
     this.choiceLocked = true
     this.phase = 'resolve'
 
-    const pCard = this.playerHand[playerPick]!
+    const pCard = this.playerGrid[this.pvpLocalRow]![this.activeCol]!
+    let eCard: CardDef
+    try {
+      eCard = getCardById(this.pvpRemote.cardId)
+    } catch {
+      this.choiceLocked = false
+      this.phase = 'select'
+      this.appendLog('Некорректные данные соперника.')
+      return
+    }
+
+    const flatP = [...this.playerGrid[0]!, ...this.playerGrid[1]!]
+    const flatE = [...this.enemyGrid[0]!, ...this.enemyGrid[1]!]
+    this.playerDeck.afterRound(flatP)
+    this.enemyDeck.afterRound(flatE)
+
+    this.applyResolvedRound(pCard, eCard)
+  }
+
+  private finishRoundAi(playerPick: 0 | 1): void {
+    if (!this.playerGrid || !this.enemyGrid) return
+    this.choiceLocked = true
+    this.phase = 'resolve'
+
+    const pCard = this.playerGrid[playerPick]![this.activeCol]!
     const ePick = (Math.random() < 0.5 ? 0 : 1) as 0 | 1
-    const eCard = this.enemyHand[ePick]!
+    const eCard = this.enemyGrid[ePick]![this.activeCol]!
 
-    this.playerDeck.afterRound(this.playerHand[0]!, this.playerHand[1]!)
-    this.enemyDeck.afterRound(this.enemyHand[0]!, this.enemyHand[1]!)
+    const flatP = [...this.playerGrid[0]!, ...this.playerGrid[1]!]
+    const flatE = [...this.enemyGrid[0]!, ...this.enemyGrid[1]!]
+    this.playerDeck.afterRound(flatP)
+    this.enemyDeck.afterRound(flatE)
 
+    this.applyResolvedRound(pCard, eCard)
+  }
+
+  private applyResolvedRound(pCard: CardDef, eCard: CardDef): void {
     const res = resolveRound(pCard, eCard)
 
     const nextPlayerHp = Math.max(
@@ -446,7 +582,6 @@ export class CardCombatScene extends Phaser.Scene {
     for (const line of res.lines) {
       this.appendLog(line)
     }
-
     this.playRoundFx(pCard, eCard, res, () => {
       this.playerHp = nextPlayerHp
       this.enemyHp = nextEnemyHp
@@ -465,9 +600,11 @@ export class CardCombatScene extends Phaser.Scene {
         this.appendLog(`Бой окончен: ${outcome}`)
         this.arenaText.setText(outcome)
         this.showMenuButton()
+        this.destroyPvpPeer()
         return
       }
 
+      this.roundIndex += 1
       this.time.delayedCall(1600, () => {
         this.startRound()
       })
@@ -494,6 +631,7 @@ export class CardCombatScene extends Phaser.Scene {
       this.menuBtn?.setStyle({ backgroundColor: '#1a1528' })
     )
     this.menuBtn.on('pointerdown', () => {
+      this.destroyPvpPeer()
       this.scene.start('MainMenu')
     })
   }

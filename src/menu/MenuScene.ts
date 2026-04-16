@@ -75,8 +75,53 @@ export class MenuScene extends Phaser.Scene {
       this.refreshLabels()
     }, 5, 60, 1)
 
+    const pvpHostBtn = this.add
+      .text(450, 360, 'PvP — создать комнату', {
+        fontFamily: 'system-ui,Segoe UI,sans-serif',
+        fontSize: '15px',
+        color: GOLD,
+        backgroundColor: '#1a1528',
+        padding: { left: 16, right: 16, top: 8, bottom: 8 },
+      })
+      .setOrigin(0.5, 0)
+      .setInteractive({ useHandCursor: true })
+    pvpHostBtn.on('pointerover', () => pvpHostBtn.setStyle({ backgroundColor: '#2a2040' }))
+    pvpHostBtn.on('pointerout', () => pvpHostBtn.setStyle({ backgroundColor: '#1a1528' }))
+    pvpHostBtn.on('pointerdown', () => {
+      saveBattleConfig(this.cfg)
+      this.scene.start('CardCombat', {
+        startHp: this.cfg.startHp,
+        turnSeconds: this.cfg.turnSeconds,
+        mode: 'pvp_host',
+      })
+    })
+
+    const pvpJoinBtn = this.add
+      .text(450, 408, 'PvP — подключиться по коду', {
+        fontFamily: 'system-ui,Segoe UI,sans-serif',
+        fontSize: '15px',
+        color: GOLD,
+        backgroundColor: '#1a1528',
+        padding: { left: 16, right: 16, top: 8, bottom: 8 },
+      })
+      .setOrigin(0.5, 0)
+      .setInteractive({ useHandCursor: true })
+    pvpJoinBtn.on('pointerover', () => pvpJoinBtn.setStyle({ backgroundColor: '#2a2040' }))
+    pvpJoinBtn.on('pointerout', () => pvpJoinBtn.setStyle({ backgroundColor: '#1a1528' }))
+    pvpJoinBtn.on('pointerdown', () => {
+      const code = window.prompt('Вставьте код комнаты от хоста (из строки PeerJS):', '')
+      if (!code?.trim()) return
+      saveBattleConfig(this.cfg)
+      this.scene.start('CardCombat', {
+        startHp: this.cfg.startHp,
+        turnSeconds: this.cfg.turnSeconds,
+        mode: 'pvp_client',
+        hostPeerId: code.trim(),
+      })
+    })
+
     const cardsBtn = this.add
-      .text(450, 372, 'Редактор карт…', {
+      .text(450, 330, 'Редактор карт…', {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
         fontSize: '16px',
         color: GOLD,
@@ -93,7 +138,7 @@ export class MenuScene extends Phaser.Scene {
     })
 
     const startBtn = this.add
-      .text(450, 452, 'В бой', {
+      .text(450, 468, 'В бой (против ИИ)', {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
         fontSize: '22px',
         color: GOLD,
@@ -110,6 +155,7 @@ export class MenuScene extends Phaser.Scene {
       this.scene.start('CardCombat', {
         startHp: this.cfg.startHp,
         turnSeconds: this.cfg.turnSeconds,
+        mode: 'ai',
       })
     })
   }
