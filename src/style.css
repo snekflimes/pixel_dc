@@ -1,4 +1,30 @@
 :root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: radial-gradient(1200px 700px at 50% 0%, #171727 0%, #0b0b12 55%, #070710 100%);
+  font-family: system-ui, "Segoe UI", sans-serif;
+}
+
+#app {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+canvas {
+  display: block;
+  margin: 0 auto;
+  image-rendering: pixelated;
+}
+
+:root {
   --text: #6b6375;
   --text-h: #08060d;
   --bg: #fff;
