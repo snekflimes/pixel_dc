@@ -6,10 +6,14 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:e2e": "tsc && vite build --mode e2e",
     "preview": "vite preview",
+    "preview:e2e": "vite preview --port 4173 --strictPort --host 127.0.0.1",
+    "test:e2e": "npm run build:e2e && playwright test",
     "peer:signal": "node scripts/peer-signal.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "^1.50.1",
     "peer": "^1.0.2",
     "typescript": "~5.9.3",
     "vite": "^8.0.0"
