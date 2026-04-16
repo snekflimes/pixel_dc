@@ -1,6 +1,7 @@
 import './style.css'
 import Phaser from 'phaser'
 import { CardCombatScene } from './cardCombat/CardCombatScene'
+import { MenuScene } from './menu/MenuScene'
 
 function initTelegram(): void {
   const tg = (window as unknown as { Telegram?: { WebApp?: { ready?: () => void; expand?: () => void } } })
@@ -17,7 +18,7 @@ const config: Phaser.Types.Core.GameConfig = {
   width: 900,
   height: 560,
   backgroundColor: '#0b0b12',
-  scene: [CardCombatScene],
+  scene: [MenuScene, CardCombatScene],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
