@@ -8,6 +8,9 @@ const LOG_W = 176
 const MAIN_X = LOG_W + 8
 const GOLD = 0xc9a227
 const BG = 0x0b0b12
+/** Сколько карточек в одной горизонтальной линии (как в «Джаггернауте»). */
+const SLOTS_PER_ROW = 4
+
 const TYPE_COLOR: Record<CardDef['type'], number> = {
   attack: 0xcc4444,
   defense: 0x4488cc,
@@ -44,6 +47,8 @@ export class CardCombatScene extends Phaser.Scene {
   private playerSprite!: Phaser.GameObjects.Image
   private enemySprite!: Phaser.GameObjects.Image
   private menuBtn?: Phaser.GameObjects.Text
+  /** В какой колонке (0…3) лежит играбельная карта в верхнем и нижнем ряду — каждый раунд случайно. */
+  private handSlotCol: [number, number] = [1, 2]
 
   constructor() {
     super({ key: 'CardCombat' })
@@ -140,8 +145,8 @@ export class CardCombatScene extends Phaser.Scene {
     this.enemySprite = this.add.image(MAIN_X + 560, 155, 'spr_enemy').setDepth(2)
     this.enemySprite.setFlipX(true)
 
-    this.appendLog('Карточный бой: выберите одну из двух карт до конца таймера.')
-    this.appendLog('Две горизонтальные полосы карт на всю ширину (ряд 1 сверху, ряд 2 снизу).')
+    this.appendLog('Карточный бой: выберите верхнюю или нижнюю карту до конца таймера.')
+    this.appendLog('Две линии по четыре слота: открытая карта и рубашки колоды в духе референса.')
 
     const pool = [...getEnabledCardIds()]
     this.playerDeck = new Deck(pool, () => Math.random())
@@ -231,6 +236,7 @@ export class CardCombatScene extends Phaser.Scene {
 
     this.playerHand = this.playerDeck.drawTwo()
     this.enemyHand = this.enemyDeck.drawTwo()
+    this.pickHandSlotColumns()
 
     this.clearCardPanel()
     this.arenaText.setText('Выберите карту.\nКарты противника скрыты.')
@@ -239,20 +245,84 @@ export class CardCombatScene extends Phaser.Scene {
     this.redrawHpBars()
   }
 
-  /** Два полноширинных ряда: по одной карте на ряд (вариант выбора — верх или низ). */
+  /** Две линейки по SLOTS_PER_ROW слотов; играбельная карта — в handSlotCol[row], остальное — рубашки. */
   private layoutPlayerCards(): void {
     if (!this.playerHand) return
-    const w = this.panelWidth()
-    const h = 96
-    const baseY = 312
+    const panelW = this.panelWidth()
+    const gap = 6
+    const slotW = Math.floor((panelW - gap * (SLOTS_PER_ROW - 1)) / SLOTS_PER_ROW)
+    const slotH = 102
+    const baseY = 276
     const rowGap = 10
 
     for (let row = 0; row < 2; row++) {
-      const y = baseY + row * (h + rowGap)
-      const card = this.playerHand[row]!
-      const cont = this.buildCardButton(card, MAIN_X, y, w, h, row as 0 | 1)
-      this.cardContainers.push(cont)
+      const y = baseY + row * (slotH + rowGap)
+      const playCol = this.handSlotCol[row]!
+      for (let col = 0; col < SLOTS_PER_ROW; col++) {
+        const x = MAIN_X + col * (slotW + gap)
+        if (col === playCol) {
+          const card = this.playerHand[row]!
+          this.cardContainers.push(
+            this.buildCardButton(card, x, y, slotW, slotH, row as 0 | 1)
+          )
+        } else {
+          this.cardContainers.push(this.buildDeckBackSlot(x, y, slotW, slotH, row, col))
+        }
+      }
     }
+  }
+
+  private pickHandSlotColumns(): void {
+    const c0 = Phaser.Math.Between(0, SLOTS_PER_ROW - 1)
+    let c1 = Phaser.Math.Between(0, SLOTS_PER_ROW - 1)
+    if (c1 === c0) {
+      c1 = (c0 + 1 + Phaser.Math.Between(0, SLOTS_PER_ROW - 2)) % SLOTS_PER_ROW
+    }
+    this.handSlotCol = [c0, c1]
+  }
+
+  private buildDeckBackSlot(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    row: number,
+    col: number
+  ): Phaser.GameObjects.Container {
+    const c = this.add.container(x, y)
+    const g = this.add.graphics()
+    g.fillStyle(0x14101c, 1)
+    g.fillRoundedRect(0, 0, w, h, 8)
+    g.lineStyle(2, 0x7a6630, 0.95)
+    g.strokeRoundedRect(0, 0, w, h, 8)
+    g.lineStyle(1, 0x4a3a22, 0.35)
+    for (let i = -h; i < w + h; i += 10) {
+      g.lineBetween(i, 0, i + h, h)
+    }
+    const mark = this.add
+      .text(w / 2, h / 2 - 6, '✦', {
+        fontFamily: 'system-ui,Segoe UI,sans-serif',
+        fontSize: `${Math.min(26, w / 5)}px`,
+        color: '#8a7540',
+      })
+      .setOrigin(0.5, 0.5)
+    const lab = this.add
+      .text(w / 2, h - 20, 'рубашка', {
+        fontFamily: 'system-ui,Segoe UI,sans-serif',
+        fontSize: '9px',
+        color: '#5a5468',
+      })
+      .setOrigin(0.5, 0)
+    const tag = this.add
+      .text(6, 4, `${row + 1} · ${col + 1}`, {
+        fontFamily: 'system-ui,Segoe UI,sans-serif',
+        fontSize: '9px',
+        color: '#4a4558',
+      })
+      .setOrigin(0, 0)
+    c.add([g, mark, lab, tag])
+    c.setSize(w, h)
+    return c
   }
 
   private buildCardButton(
@@ -275,6 +345,7 @@ export class CardCombatScene extends Phaser.Scene {
     }
     drawBg(false)
 
+    const compact = w < 190
     const typeLabel =
       card.type === 'attack' ? 'Атака' : card.type === 'defense' ? 'Защита' : 'Навык'
     const stat =
@@ -285,36 +356,37 @@ export class CardCombatScene extends Phaser.Scene {
           : `+${card.heal ?? 0} HP`
 
     const title = this.add
-      .text(8, 6, card.name, {
+      .text(6, 4, card.name, {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
-        fontSize: '14px',
+        fontSize: compact ? '12px' : '13px',
         color: '#f0ecf8',
-        wordWrap: { width: w - 16 },
+        wordWrap: { width: w - 12 },
       })
       .setOrigin(0, 0)
 
     const meta = this.add
-      .text(8, 26, `${typeLabel} · ${stat}`, {
+      .text(6, compact ? 22 : 24, `${typeLabel} · ${stat}`, {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
-        fontSize: '11px',
+        fontSize: compact ? '10px' : '11px',
         color: '#a8a0b8',
+        wordWrap: { width: w - 12 },
       })
       .setOrigin(0, 0)
 
     const desc = this.add
-      .text(8, 44, card.description, {
+      .text(6, compact ? 38 : 40, card.description, {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
-        fontSize: '10px',
+        fontSize: compact ? '9px' : '10px',
         color: '#8a8298',
-        wordWrap: { width: w - 16 },
-        maxLines: 2,
+        wordWrap: { width: w - 12 },
+        maxLines: compact ? 3 : 3,
       })
       .setOrigin(0, 0)
 
     const rowTag = this.add
-      .text(w - 6, 6, `Ряд ${index + 1}`, {
+      .text(w - 4, 4, `Ряд ${index + 1}`, {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
-        fontSize: '10px',
+        fontSize: '9px',
         color: '#c9a227',
       })
       .setOrigin(1, 0)
