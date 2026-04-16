@@ -137,3 +137,33 @@ export async function exportCardsJsonPretty(): Promise<string> {
   const rows = await db.cards.orderBy('id').toArray()
   return `${JSON.stringify(rows, null, 2)}\n`
 }
+
+/** Список карт для UI редактора. */
+export async function getAllCardsOrdered(): Promise<CardDef[]> {
+  return db.cards.orderBy('id').toArray()
+}
+
+/** Сохранение набора карт из формы (без JSON). */
+export async function saveAllCards(cards: CardDef[]): Promise<void> {
+  const ids = new Set<string>()
+  for (const c of cards) {
+    const id = String(c.id ?? '').trim()
+    if (!id) {
+      throw new Error('У каждой карты должен быть короткий код (поле «Код»).')
+    }
+    if (ids.has(id)) {
+      throw new Error(`Код «${id}» встречается дважды. Задайте уникальные коды.`)
+    }
+    ids.add(id)
+  }
+  const normalized = cards.map((c) =>
+    parseOneCard(JSON.parse(JSON.stringify(c)) as unknown)
+  )
+  const enabled = normalized.filter((k) => k.enabled !== false)
+  if (enabled.length < 2) {
+    throw new Error('Отметьте минимум две карты галочкой «В колоде».')
+  }
+  await db.cards.clear()
+  await db.cards.bulkPut(normalized)
+  await refreshMemory()
+}

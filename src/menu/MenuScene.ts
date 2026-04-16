@@ -35,7 +35,7 @@ export class MenuScene extends Phaser.Scene {
       .text(
         450,
         100,
-        'Бой: HP и таймер — в localStorage. Колода — в IndexedDB (кнопка ниже) или начальный сид с /data/cards.json.',
+        'Настройки боя хранятся в браузере. Состав колоды правьте в «Редактор карт».',
         {
           fontFamily: 'system-ui,Segoe UI,sans-serif',
           fontSize: '13px',
@@ -76,7 +76,7 @@ export class MenuScene extends Phaser.Scene {
     }, 5, 60, 1)
 
     const cardsBtn = this.add
-      .text(450, 372, 'База карт (IndexedDB)…', {
+      .text(450, 372, 'Редактор карт…', {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
         fontSize: '16px',
         color: GOLD,
