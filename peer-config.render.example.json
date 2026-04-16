@@ -1,0 +1,8 @@
+{
+  "host": "YOUR-RENDER-SERVICE.onrender.com",
+  "port": 443,
+  "path": "/",
+  "secure": true,
+  "key": "peerjs"
+}
+

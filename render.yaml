@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: pixeldc-peer-signal
+    env: node
+    plan: free
+    autoDeploy: true
+    buildCommand: npm ci
+    startCommand: npm run peer:signal
+    envVars:
+      - key: PEER_KEY
+        value: peerjs
+      - key: PEER_PATH
+        value: /

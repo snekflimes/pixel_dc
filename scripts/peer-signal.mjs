@@ -5,7 +5,8 @@
  */
 import { PeerServer } from 'peer'
 
-const port = Number(process.env.PEER_PORT ?? 9000)
+// Render/Fly/Vercel-like platforms typically provide PORT.
+const port = Number(process.env.PORT ?? process.env.PEER_PORT ?? 9000)
 const path = process.env.PEER_PATH ?? '/'
 const key = process.env.PEER_KEY ?? 'peerjs'
 
