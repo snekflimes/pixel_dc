@@ -50,7 +50,7 @@ export class CardCombatScene extends Phaser.Scene {
   }
 
   init(data?: { startHp?: number; turnSeconds?: number }): void {
-    this.maxHp = Math.round(Phaser.Math.Clamp(data?.startHp ?? 100, 20, 300))
+    this.maxHp = Math.round(Phaser.Math.Clamp(data?.startHp ?? 12, 4, 48))
     this.turnSeconds = Math.round(Phaser.Math.Clamp(data?.turnSeconds ?? 15, 5, 60))
     this.remainingSec = this.turnSeconds
   }

@@ -1,50 +1,122 @@
 [
   {
-    "id": "atk_heavy",
-    "name": "Тяжёлый удар",
+    "id": "atk_strike",
+    "name": "Удар",
     "type": "attack",
-    "description": "Сильный удар по противнику.",
-    "damage": 50,
+    "description": "Базовая атака в духе Strike из Slay the Spire — простой и предсказуемый урон.",
+    "damage": 4,
+    "enabled": true
+  },
+  {
+    "id": "atk_jab",
+    "name": "Толчок",
+    "type": "attack",
+    "description": "Быстрый короткий выпад — мало урона, стабильный темп.",
+    "damage": 3,
     "enabled": true
   },
   {
     "id": "atk_quick",
-    "name": "Быстрый выпад",
+    "name": "Выпад",
     "type": "attack",
-    "description": "Быстрая атака.",
-    "damage": 35,
+    "description": "Средний урон по скорости между Strike и тяжёлой атакой.",
+    "damage": 5,
     "enabled": true
   },
   {
-    "id": "def_tower",
-    "name": "Стоячая стена",
-    "type": "defense",
-    "description": "Поглощает входящий урон атаки.",
-    "block": 60,
+    "id": "atk_bash",
+    "name": "Удар в корпус",
+    "type": "attack",
+    "description": "Отсылка к Bash: сильнее среднего удара.",
+    "damage": 6,
     "enabled": true
   },
   {
-    "id": "def_buckler",
-    "name": "Баклер",
+    "id": "atk_double",
+    "name": "Двойной удар",
+    "type": "attack",
+    "description": "По настрою как Twin Strike — суммарно ощутимый заход.",
+    "damage": 6,
+    "enabled": true
+  },
+  {
+    "id": "atk_cleave",
+    "name": "Рассечение",
+    "type": "attack",
+    "description": "Широкий замах (у нас один цель, но ритм как у Cleave).",
+    "damage": 5,
+    "enabled": true
+  },
+  {
+    "id": "atk_heavy",
+    "name": "Тяжёлый замах",
+    "type": "attack",
+    "description": "Высокий урон, по ощущениям как Heavy Blade в урезанном масштабе.",
+    "damage": 7,
+    "enabled": true
+  },
+  {
+    "id": "atk_finisher",
+    "name": "Добивание",
+    "type": "attack",
+    "description": "Редкий «дорогой» удар — пик урона в колоде.",
+    "damage": 8,
+    "enabled": true
+  },
+  {
+    "id": "atk_chop",
+    "name": "Рубящий удар",
+    "type": "attack",
+    "description": "Уверенный средний урон.",
+    "damage": 6,
+    "enabled": true
+  },
+  {
+    "id": "def_guard",
+    "name": "Оборона",
     "type": "defense",
-    "description": "Частично блокирует удар.",
-    "block": 40,
+    "description": "Как Defend в StS — универсальный блок.",
+    "block": 4,
+    "enabled": true
+  },
+  {
+    "id": "def_parry",
+    "name": "Парирование",
+    "type": "defense",
+    "description": "Средний блок с упором на тайминг.",
+    "block": 5,
+    "enabled": true
+  },
+  {
+    "id": "def_barricade",
+    "name": "Бруствер",
+    "type": "defense",
+    "description": "Плотный блок — аналог сильной защитной карты.",
+    "block": 6,
+    "enabled": true
+  },
+  {
+    "id": "skill_bandage",
+    "name": "Бинт",
+    "type": "skill",
+    "description": "Малый отхил, как расходник в подземельях.",
+    "heal": 3,
+    "enabled": true
+  },
+  {
+    "id": "skill_rest",
+    "name": "Передышка",
+    "type": "skill",
+    "description": "Умеренное восстановление — по весу ближе к «сейф»-ходу.",
+    "heal": 4,
     "enabled": true
   },
   {
     "id": "skill_mend",
     "name": "Перевязка",
     "type": "skill",
-    "description": "Восстанавливает здоровье.",
-    "heal": 40,
-    "enabled": true
-  },
-  {
-    "id": "skill_second_wind",
-    "name": "Второе дыхание",
-    "type": "skill",
-    "description": "Небольшое восстановление.",
-    "heal": 25,
+    "description": "Сильнее базового бинта — редкий большой отхил среди скиллов.",
+    "heal": 5,
     "enabled": true
   }
 ]

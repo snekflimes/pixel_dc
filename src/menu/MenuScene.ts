@@ -67,7 +67,7 @@ export class MenuScene extends Phaser.Scene {
       this.cfg.startHp = v
       this.persist()
       this.refreshLabels()
-    }, 20, 300, 10)
+    }, 4, 48, 2)
 
     this.makeStepper(450, 290, 'Секунд на ход', () => this.cfg.turnSeconds, (v) => {
       this.cfg.turnSeconds = v

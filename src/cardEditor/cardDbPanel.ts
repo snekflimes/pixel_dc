@@ -30,7 +30,7 @@ export async function openCardDatabaseEditor(): Promise<void> {
   const hint = document.createElement('p')
   hint.style.cssText = 'margin:0 0 12px;font-size:12px;color:#9a93a8;line-height:1.45'
   hint.innerHTML =
-    'Данные лежат локально в IndexedDB (Dexie), не на FTP. Сервер только отдаёт статику и файл <code>/data/cards.json</code> как <strong>начальный сид</strong> при пустой базе. После правок здесь загрузится уже ваше состояние из браузера.'
+    'Данные лежат локально в IndexedDB (Dexie). Чтобы подтянуть новый баланс с сайта после обновления, нажмите «Сбросить к /data/cards.json». Начальный сид подставляется только при <strong>пустой</strong> базе.'
 
   const ta = document.createElement('textarea')
   ta.value = text

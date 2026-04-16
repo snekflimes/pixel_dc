@@ -7,7 +7,8 @@ export interface BattleConfig {
 const STORAGE_KEY = 'pixel_dc_battle_config'
 
 export const DEFAULT_BATTLE_CONFIG: BattleConfig = {
-  startHp: 100,
+  /** Масштаб как у карт (~3–8 урона): короткие взаимодействия, чувствительный баланс. */
+  startHp: 12,
   turnSeconds: 15,
 }
 
@@ -19,8 +20,8 @@ export function loadBattleConfig(): BattleConfig {
     return {
       startHp: clamp(
         typeof o.startHp === 'number' ? o.startHp : DEFAULT_BATTLE_CONFIG.startHp,
-        20,
-        300
+        4,
+        48
       ),
       turnSeconds: clamp(
         typeof o.turnSeconds === 'number' ? o.turnSeconds : DEFAULT_BATTLE_CONFIG.turnSeconds,
