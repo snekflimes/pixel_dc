@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import Peer, { type DataConnection } from 'peerjs'
 import { getCardById, getEnabledCardIds } from './cards'
 import { Deck } from './deck'
+import { withStatBonus } from './cardBonus'
 import { resolveRound } from './resolveRound'
 import type { CardDef, RoundResolution } from './types'
 import {
@@ -53,7 +54,7 @@ export class CardCombatScene extends Phaser.Scene {
   private pvpConn: DataConnection | null = null
   /** Локальный выбор строки в PvP (ожидание соперника). */
   private pvpLocalRow: 0 | 1 | null = null
-  private pvpRemote: { row: 0 | 1; cardId: string } | null = null
+  private pvpRemote: { row: 0 | 1; cardId: string; cardBp: number } | null = null
 
   private logLines: string[] = []
   private logText!: Phaser.GameObjects.Text
@@ -69,6 +70,22 @@ export class CardCombatScene extends Phaser.Scene {
   private playerSprite!: Phaser.GameObjects.Image
   private enemySprite!: Phaser.GameObjects.Image
   private menuBtn?: Phaser.GameObjects.Text
+
+  /** Очки тактики на весь матч (5). Тратятся в активном столбце, до +2 на карту за раунд. */
+  private static readonly BP_MATCH = 5
+  private static readonly BP_MAX_ON_CARD = 2
+  private matchBpPlayer = CardCombatScene.BP_MATCH
+  private matchBpEnemy = CardCombatScene.BP_MATCH
+  /** Бонус к стату карты в этом раунде [row][col] */
+  private roundPlayerBp: number[][] = [
+    [0, 0, 0, 0],
+    [0, 0, 0, 0],
+  ]
+  private roundEnemyBp: number[][] = [
+    [0, 0, 0, 0],
+    [0, 0, 0, 0],
+  ]
+  private bpStatusText!: Phaser.GameObjects.Text
 
   constructor() {
     super({ key: 'CardCombat' })
@@ -181,6 +198,30 @@ export class CardCombatScene extends Phaser.Scene {
     this.appendLog(
       'Активный столбец идёт слева направо (1 → 4). Выберите верхнюю или нижнюю карту в подсвеченном столбце.'
     )
+    this.appendLog(
+      'Очки тактики: 5 за матч, кнопка «+» в активном столбце, до +2 к числу на карте в этом раунде.'
+    )
+
+    this.matchBpPlayer = CardCombatScene.BP_MATCH
+    this.matchBpEnemy = CardCombatScene.BP_MATCH
+    this.roundPlayerBp = [
+      [0, 0, 0, 0],
+      [0, 0, 0, 0],
+    ]
+    this.roundEnemyBp = [
+      [0, 0, 0, 0],
+      [0, 0, 0, 0],
+    ]
+
+    this.bpStatusText = this.add
+      .text(MAIN_X, 28, '', {
+        fontFamily: 'system-ui,Segoe UI,sans-serif',
+        fontSize: '11px',
+        color: '#9a8a68',
+        wordWrap: { width: 600 },
+      })
+      .setOrigin(0, 0)
+    this.refreshBpStatus()
 
     if (this.mode !== 'ai') {
       this.appendLog(
@@ -251,7 +292,7 @@ export class CardCombatScene extends Phaser.Scene {
       const m = parsePvpData(raw)
       if (!m) return
       if (m.round !== this.roundIndex) return
-      this.pvpRemote = { row: m.row, cardId: m.cardId }
+      this.pvpRemote = { row: m.row, cardId: m.cardId, cardBp: m.cardBp }
       this.tryFinishPvpRound()
     })
   }
@@ -289,6 +330,62 @@ export class CardCombatScene extends Phaser.Scene {
     const m = Math.floor(s / 60)
     const sec = Math.floor(s % 60)
     this.timerText.setText(`${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`)
+  }
+
+  private refreshBpStatus(): void {
+    this.bpStatusText.setText(
+      `Тактика: осталось ${this.matchBpPlayer} / ${CardCombatScene.BP_MATCH} (до +${CardCombatScene.BP_MAX_ON_CARD} к числу на карту в активном столбце за раунд).`
+    )
+  }
+
+  private prefillEnemyBpInActiveColumn(): void {
+    const ac = this.activeCol
+    let guard = 0
+    while (this.matchBpEnemy > 0 && guard < 64) {
+      guard += 1
+      if (
+        this.roundEnemyBp[0]![ac]! >= CardCombatScene.BP_MAX_ON_CARD &&
+        this.roundEnemyBp[1]![ac]! >= CardCombatScene.BP_MAX_ON_CARD
+      ) {
+        break
+      }
+      const r = (Math.random() < 0.5 ? 0 : 1) as 0 | 1
+      if (this.roundEnemyBp[r]![ac]! >= CardCombatScene.BP_MAX_ON_CARD) {
+        continue
+      }
+      this.roundEnemyBp[r]![ac]! += 1
+      this.matchBpEnemy -= 1
+    }
+  }
+
+  private tryAddPlayerBp(row: 0 | 1, col: number): void {
+    if (this.phase !== 'select' || this.choiceLocked) {
+      return
+    }
+    if (col !== this.activeCol) {
+      return
+    }
+    if (this.mode !== 'ai' && this.pvpLocalRow !== null) {
+      return
+    }
+    if (this.matchBpPlayer <= 0) {
+      return
+    }
+    if (this.roundPlayerBp[row]![col]! >= CardCombatScene.BP_MAX_ON_CARD) {
+      return
+    }
+    if (!this.playerGrid) {
+      return
+    }
+    this.roundPlayerBp[row]![col]! += 1
+    this.matchBpPlayer -= 1
+    const c = this.playerGrid[row]![col]!
+    this.appendLog(
+      `Тактика: +1 к «${c.name}» (сейчас +${this.roundPlayerBp[row]![col]!} на эту карту).`
+    )
+    this.clearCardPanel()
+    this.layoutPlayerCards()
+    this.refreshBpStatus()
   }
 
   private redrawHpBars(): void {
@@ -346,6 +443,18 @@ export class CardCombatScene extends Phaser.Scene {
     this.pvpLocalRow = null
     this.pvpRemote = null
 
+    this.roundPlayerBp = [
+      [0, 0, 0, 0],
+      [0, 0, 0, 0],
+    ]
+    this.roundEnemyBp = [
+      [0, 0, 0, 0],
+      [0, 0, 0, 0],
+    ]
+    if (this.mode === 'ai') {
+      this.prefillEnemyBpInActiveColumn()
+    }
+
     const pFlat = this.playerDeck.drawEight()
     const eFlat = this.enemyDeck.drawEight()
     this.playerGrid = this.playerDeck.toGrid(pFlat)
@@ -359,6 +468,7 @@ export class CardCombatScene extends Phaser.Scene {
     )
 
     this.layoutPlayerCards()
+    this.refreshBpStatus()
     this.redrawHpBars()
   }
 
@@ -425,12 +535,13 @@ export class CardCombatScene extends Phaser.Scene {
     const compact = w < 190
     const typeLabel =
       card.type === 'attack' ? 'Атака' : card.type === 'defense' ? 'Защита' : 'Навык'
+    const eff = withStatBonus(card, this.roundPlayerBp[row]![col]!)
     const stat =
-      card.type === 'attack'
-        ? `Урон ${card.damage ?? 0}`
-        : card.type === 'defense'
-          ? `Блок ${card.block ?? 0}`
-          : `+${card.heal ?? 0} HP`
+      eff.type === 'attack'
+        ? `Урон ${eff.damage ?? 0}`
+        : eff.type === 'defense'
+          ? `Блок ${eff.block ?? 0}`
+          : `+${eff.heal ?? 0} HP`
 
     const title = this.add
       .text(6, 4, card.name, {
@@ -476,7 +587,43 @@ export class CardCombatScene extends Phaser.Scene {
       hit.on('pointerdown', () => this.onPlayerPick(row))
     }
 
-    container.add([bg, title, meta, desc, rowTag, hit])
+    const children: Phaser.GameObjects.GameObject[] = [bg, title, meta, desc, rowTag, hit]
+
+    if (playable) {
+      const canAdd =
+        this.phase === 'select' &&
+        !this.choiceLocked &&
+        (this.mode === 'ai' || this.pvpLocalRow === null) &&
+        this.matchBpPlayer > 0 &&
+        this.roundPlayerBp[row]![col]! < CardCombatScene.BP_MAX_ON_CARD
+      const addLabel = this.add
+        .text(w - 4, h - 2, '+', {
+          fontFamily: 'system-ui,Segoe UI,sans-serif',
+          fontSize: '18px',
+          color: canAdd ? '#e8c84a' : '#5a5040',
+        })
+        .setOrigin(1, 1)
+      const addHint = this.add
+        .text(w - 22, h - 20, 'такт', {
+          fontFamily: 'system-ui,Segoe UI,sans-serif',
+          fontSize: '8px',
+          color: '#7a7058',
+        })
+        .setOrigin(0.5, 1)
+      const addHit = this.add.rectangle(w - 16, h - 12, 28, 28, 0x000000, 0)
+      if (canAdd) {
+        addHit.setInteractive({ useHandCursor: true })
+        addHit.on('pointerover', () => drawBg(true))
+        addHit.on('pointerout', () => drawBg(false))
+        addHit.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, ev: Event) => {
+          ev.stopPropagation()
+          this.tryAddPlayerBp(row, col)
+        })
+      }
+      children.push(addHint, addLabel, addHit)
+    }
+
+    container.add(children)
     container.setSize(w, h)
     return container
   }
@@ -503,12 +650,14 @@ export class CardCombatScene extends Phaser.Scene {
     if (this.mode !== 'ai') {
       if (!this.playerGrid || !this.pvpConn) return
       this.pvpLocalRow = row
-      const card = this.playerGrid[row]![this.activeCol]!
+      const ac = this.activeCol
+      const card = this.playerGrid[row]![ac]!
       this.sendPvpPick({
         type: 'pick',
         round: this.roundIndex,
         row,
         cardId: card.id,
+        cardBp: this.roundPlayerBp[row]![ac]!,
       })
       this.tryFinishPvpRound()
       return
@@ -527,23 +676,28 @@ export class CardCombatScene extends Phaser.Scene {
     this.choiceLocked = true
     this.phase = 'resolve'
 
-    const pCard = this.playerGrid[this.pvpLocalRow]![this.activeCol]!
-    let eCard: CardDef
+    const ac = this.activeCol
+    const pBase = this.playerGrid[this.pvpLocalRow]![ac]!
+    const pBp = this.roundPlayerBp[this.pvpLocalRow]![ac]!
+    let eBase: CardDef
     try {
-      eCard = getCardById(this.pvpRemote.cardId)
+      eBase = getCardById(this.pvpRemote.cardId)
     } catch {
       this.choiceLocked = false
       this.phase = 'select'
       this.appendLog('Некорректные данные соперника.')
       return
     }
+    const eBp = this.pvpRemote.cardBp
+    const pCard = withStatBonus(pBase, pBp)
+    const eCard = withStatBonus(eBase, eBp)
 
     const flatP = [...this.playerGrid[0]!, ...this.playerGrid[1]!]
     const flatE = [...this.enemyGrid[0]!, ...this.enemyGrid[1]!]
     this.playerDeck.afterRound(flatP)
     this.enemyDeck.afterRound(flatE)
 
-    this.applyResolvedRound(pCard, eCard)
+    this.applyResolvedRound(pCard, eCard, { pBonus: pBp, eBonus: eBp })
   }
 
   private finishRoundAi(playerPick: 0 | 1): void {
@@ -551,19 +705,34 @@ export class CardCombatScene extends Phaser.Scene {
     this.choiceLocked = true
     this.phase = 'resolve'
 
-    const pCard = this.playerGrid[playerPick]![this.activeCol]!
+    const ac = this.activeCol
+    const pBase = this.playerGrid[playerPick]![ac]!
     const ePick = (Math.random() < 0.5 ? 0 : 1) as 0 | 1
-    const eCard = this.enemyGrid[ePick]![this.activeCol]!
+    const eBase = this.enemyGrid[ePick]![ac]!
+    const pBp = this.roundPlayerBp[playerPick]![ac]!
+    const eBp = this.roundEnemyBp[ePick]![ac]!
+    const pCard = withStatBonus(pBase, pBp)
+    const eCard = withStatBonus(eBase, eBp)
 
     const flatP = [...this.playerGrid[0]!, ...this.playerGrid[1]!]
     const flatE = [...this.enemyGrid[0]!, ...this.enemyGrid[1]!]
     this.playerDeck.afterRound(flatP)
     this.enemyDeck.afterRound(flatE)
 
-    this.applyResolvedRound(pCard, eCard)
+    this.applyResolvedRound(pCard, eCard, { pBonus: pBp, eBonus: eBp })
   }
 
-  private applyResolvedRound(pCard: CardDef, eCard: CardDef): void {
+  private applyResolvedRound(
+    pCard: CardDef,
+    eCard: CardDef,
+    meta?: { pBonus: number; eBonus: number }
+  ): void {
+    if (meta && meta.pBonus > 0) {
+      this.appendLog(`Ваша тактика: +${meta.pBonus} к числу на карте.`)
+    }
+    if (meta && meta.eBonus > 0) {
+      this.appendLog(`Тактика противника: +${meta.eBonus}.`)
+    }
     const res = resolveRound(pCard, eCard)
 
     const nextPlayerHp = Math.max(

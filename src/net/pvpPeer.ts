@@ -128,6 +128,8 @@ export type PvpPickMsg = {
   round: number
   row: 0 | 1
   cardId: string
+  /** Очки тактики на выбранной карте (0–2) за раунд. */
+  cardBp: number
 }
 
 export function parsePvpData(raw: unknown): PvpPickMsg | null {
@@ -138,7 +140,9 @@ export function parsePvpData(raw: unknown): PvpPickMsg | null {
   const row = o.row === 0 || o.row === 1 ? o.row : null
   const cardId = typeof o.cardId === 'string' ? o.cardId : ''
   if (!Number.isFinite(round) || row === null || !cardId) return null
-  return { type: 'pick', round, row, cardId }
+  const cardBp = Number(o.cardBp)
+  const bp = Number.isFinite(cardBp) ? Math.max(0, Math.min(2, Math.floor(cardBp))) : 0
+  return { type: 'pick', round, row, cardId, cardBp: bp }
 }
 
 /** Хост: новый Peer, возвращает id комнаты для второго игрока. */
