@@ -21,7 +21,7 @@ body {
 canvas {
   display: block;
   margin: 0 auto;
-  image-rendering: pixelated;
+  image-rendering: auto;
 }
 
 :root {

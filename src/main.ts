@@ -21,11 +21,19 @@ const config: Phaser.Types.Core.GameConfig = {
   height: 560,
   backgroundColor: '#0b0b12',
   scene: [MenuScene, CardCombatScene],
+  render: {
+    antialias: true,
+    antialiasGL: true,
+    pixelArt: false,
+    roundPixels: false,
+  },
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
 }
+
+;(config as unknown as { resolution?: number }).resolution = Math.min(2, globalThis.devicePixelRatio || 1)
 
 /** Один Game на страницу: повторный init (редкий двойной import) не копит WebGL/сцены. */
 const g = globalThis as unknown as { __PIXEL_DC_PHASER_GAME__?: Phaser.Game }

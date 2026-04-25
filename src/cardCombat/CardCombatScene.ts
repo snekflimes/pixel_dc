@@ -230,7 +230,7 @@ export class CardCombatScene extends Phaser.Scene {
     ]
 
     this.bpStatusText = this.add
-      .text(MAIN_X, 28, '', {
+      .text(MAIN_X, 54, '', {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
         fontSize: '11px',
         color: '#9a8a68',
@@ -241,7 +241,7 @@ export class CardCombatScene extends Phaser.Scene {
     this.refreshBpStatus()
 
     this.turnStatusText = this.add
-      .text(MAIN_X, 52, '', {
+      .text(MAIN_X, 74, '', {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
         fontSize: '12px',
         color: '#c8c0d8',
@@ -250,8 +250,8 @@ export class CardCombatScene extends Phaser.Scene {
       .setOrigin(0, 0)
       .setDepth(3)
 
-    this.minionStripEnemy = this.add.container(MAIN_X, 72).setDepth(3)
-    this.minionStripPlayer = this.add.container(MAIN_X, 200).setDepth(3)
+    this.minionStripEnemy = this.add.container(MAIN_X, 104).setDepth(3)
+    this.minionStripPlayer = this.add.container(MAIN_X, 196).setDepth(3)
 
     this.tutorial = new CardCombatTutorial(this)
     this.tutorial.mountHelpButton(860, 8)
@@ -390,7 +390,7 @@ export class CardCombatScene extends Phaser.Scene {
     const g = this.bpPips
     g.clear()
     const x0 = MAIN_X + 400
-    const y = 34
+    const y = 60
     for (let i = 0; i < CardCombatScene.BP_MATCH; i++) {
       const filled = i < this.matchBpPlayer
       g.fillStyle(filled ? GOLD : 0x3a3428, filled ? 1 : 0.9)
