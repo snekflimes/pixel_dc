@@ -193,7 +193,7 @@ export class CardCombatScene extends Phaser.Scene {
     this.logText = this.add
       .text(10, 12, '', {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
-        fontSize: '11px',
+        fontSize: '10px',
         color: '#b8b0c4',
         wordWrap: { width: this.logW - 22 },
       })
@@ -434,7 +434,7 @@ export class CardCombatScene extends Phaser.Scene {
         ? '\nОжидание хода соперника…'
         : ''
     this.turnStatusText.setText(
-      `Раунд ${this.roundIndex + 1} · ход из левого столбца (очередь сдвигается после розыгрыша).${wait}`
+      `Раунд ${this.roundIndex + 1} · сыграйте карту из столбца «СЕЙЧАС».${wait}`
     )
   }
 
@@ -520,6 +520,17 @@ export class CardCombatScene extends Phaser.Scene {
   }
 
   private layoutMinionStrips(): void {
+    // Place minion strips dynamically between top bar and hand.
+    const slotH = Math.round(Phaser.Math.Clamp(this.scale.height * 0.18, 108, 140))
+    const handTop = this.scale.height - (slotH * 2 + 36)
+    const boardTop = 104
+    const boardBottom = handTop - 8
+    const boardH = Math.max(120, boardBottom - boardTop)
+    const enemyY = boardTop + Math.round(boardH * 0.08)
+    const playerY = boardTop + Math.round(boardH * 0.60)
+    this.minionStripEnemy.setPosition(this.mainX + 10, enemyY)
+    this.minionStripPlayer.setPosition(this.mainX + 10, playerY)
+
     this.minionStripEnemy.removeAll(true)
     this.minionStripPlayer.removeAll(true)
     const slotW = 64
@@ -632,9 +643,8 @@ export class CardCombatScene extends Phaser.Scene {
 
     this.clearCardPanel()
 
-    this.arenaText.setText(
-      `Ход ${this.roundIndex + 1}. Слева — текущий столбец.\nВыберите верхнюю или нижнюю карту. После хода колонки сдвинутся.`
-    )
+    // Center of board should stay clean (HS-like). We only show reveal text during resolve.
+    this.arenaText.setText('')
     this.updateTurnStatus()
 
     this.layoutPlayerCards()
