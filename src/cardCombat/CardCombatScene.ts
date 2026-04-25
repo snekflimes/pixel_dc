@@ -15,8 +15,6 @@ import {
   type PvpPickMsg,
 } from '../net/pvpPeer'
 
-const LOG_W = 176
-const MAIN_X = LOG_W + 8
 const GOLD = 0xc9a227
 const BG = 0x0b0b12
 const SLOTS_PER_ROW = 4
@@ -33,6 +31,10 @@ type Phase = 'select' | 'resolve' | 'ended'
 type BattleMode = 'ai' | 'pvp_host' | 'pvp_client'
 
 export class CardCombatScene extends Phaser.Scene {
+  // keep refs for future relayout (responsive)
+  private logPanelBg!: Phaser.GameObjects.Rectangle
+  private topBarBg!: Phaser.GameObjects.Rectangle
+
   private playerDeck!: Deck
   private enemyDeck!: Deck
   private maxHp = 100
@@ -106,6 +108,18 @@ export class CardCombatScene extends Phaser.Scene {
     super({ key: 'CardCombat' })
   }
 
+  private get logW(): number {
+    return Math.round(Phaser.Math.Clamp(this.scale.width * 0.24, 170, 260))
+  }
+
+  private get mainX(): number {
+    return this.logW + 14
+  }
+
+  private get mainW(): number {
+    return Math.max(260, this.scale.width - this.mainX - 12)
+  }
+
   private get activeCol(): number {
     return ACTIVE_COL
   }
@@ -162,19 +176,31 @@ export class CardCombatScene extends Phaser.Scene {
 
     this.cameras.main.setBackgroundColor(BG)
 
-    this.add.rectangle(LOG_W / 2, 280, LOG_W - 4, 548, 0x12121a, 0.95).setStrokeStyle(1, 0x2a2a38)
+    // Background panels (responsive)
+    this.logPanelBg = this.add
+      .rectangle(this.logW / 2, this.scale.height / 2, this.logW - 8, this.scale.height - 18, 0x12121a, 0.95)
+      .setStrokeStyle(1, 0x2a2a38)
+      .setDepth(0)
+
+    this.topBarBg = this.add
+      .rectangle(this.mainX + this.mainW / 2, 44, this.mainW, 88, 0x11111a, 0.82)
+      .setStrokeStyle(1, 0x2a2a38)
+      .setDepth(0)
+    // Touch fields to satisfy noUnusedLocals (we will reuse them for relayout soon).
+    this.logPanelBg.setScrollFactor(0)
+    this.topBarBg.setScrollFactor(0)
 
     this.logText = this.add
-      .text(8, 12, '', {
+      .text(10, 12, '', {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
         fontSize: '11px',
         color: '#b8b0c4',
-        wordWrap: { width: LOG_W - 20 },
+        wordWrap: { width: this.logW - 22 },
       })
       .setOrigin(0, 0)
 
     this.enemyHpText = this.add
-      .text(MAIN_X, 10, '', {
+      .text(this.mainX + 10, 10, '', {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
         fontSize: '14px',
         color: '#e8e4f0',
@@ -183,7 +209,7 @@ export class CardCombatScene extends Phaser.Scene {
 
     this.enemyHpBar = this.add.graphics()
     this.playerHpText = this.add
-      .text(MAIN_X, 242, '', {
+      .text(this.mainX + 10, 58, '', {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
         fontSize: '14px',
         color: '#e8e4f0',
@@ -193,7 +219,7 @@ export class CardCombatScene extends Phaser.Scene {
     this.playerHpBar = this.add.graphics()
 
     this.timerText = this.add
-      .text(780, 12, '', {
+      .text(this.mainX + this.mainW - 10, 10, '', {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
         fontSize: '22px',
         color: '#c9a227',
@@ -201,17 +227,19 @@ export class CardCombatScene extends Phaser.Scene {
       .setOrigin(1, 0)
 
     this.arenaText = this.add
-      .text(450, 118, '', {
+      .text(this.mainX + this.mainW / 2, 106, '', {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
         fontSize: '14px',
         color: '#9a93a8',
         align: 'center',
-        wordWrap: { width: 420 },
+        wordWrap: { width: Math.max(260, this.mainW - 30) },
       })
       .setOrigin(0.5, 0)
 
-    this.playerSprite = this.add.image(MAIN_X + 130, 155, 'spr_player').setDepth(2)
-    this.enemySprite = this.add.image(MAIN_X + 560, 155, 'spr_enemy').setDepth(2)
+    const cx = this.mainX + this.mainW / 2
+    const boardY = 170
+    this.playerSprite = this.add.image(cx - 170, boardY, 'spr_player').setDepth(2)
+    this.enemySprite = this.add.image(cx + 170, boardY, 'spr_enemy').setDepth(2)
     this.enemySprite.setFlipX(true)
 
     this.appendLog('Карточный бой: очередь 2×4 (видно 4 хода вперёд). Играете с левого столбца.')
@@ -230,28 +258,28 @@ export class CardCombatScene extends Phaser.Scene {
     ]
 
     this.bpStatusText = this.add
-      .text(MAIN_X, 54, '', {
+      .text(this.mainX + 10, 32, '', {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
         fontSize: '11px',
         color: '#9a8a68',
-        wordWrap: { width: 520 },
+        wordWrap: { width: Math.max(260, this.mainW - 260) },
       })
       .setOrigin(0, 0)
     this.bpPips = this.add.graphics().setDepth(3)
     this.refreshBpStatus()
 
     this.turnStatusText = this.add
-      .text(MAIN_X, 74, '', {
+      .text(this.mainX + 10, 76, '', {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
         fontSize: '12px',
         color: '#c8c0d8',
-        wordWrap: { width: 520 },
+        wordWrap: { width: Math.max(260, this.mainW - 20) },
       })
       .setOrigin(0, 0)
       .setDepth(3)
 
-    this.minionStripEnemy = this.add.container(MAIN_X, 104).setDepth(3)
-    this.minionStripPlayer = this.add.container(MAIN_X, 196).setDepth(3)
+    this.minionStripEnemy = this.add.container(this.mainX + 10, 126).setDepth(3)
+    this.minionStripPlayer = this.add.container(this.mainX + 10, 216).setDepth(3)
 
     this.tutorial = new CardCombatTutorial(this)
     this.tutorial.mountHelpButton(860, 8)
@@ -389,8 +417,8 @@ export class CardCombatScene extends Phaser.Scene {
   private redrawBpPips(): void {
     const g = this.bpPips
     g.clear()
-    const x0 = MAIN_X + 400
-    const y = 60
+    const x0 = this.mainX + this.mainW - 86
+    const y = 40
     for (let i = 0; i < CardCombatScene.BP_MATCH; i++) {
       const filled = i < this.matchBpPlayer
       g.fillStyle(filled ? GOLD : 0x3a3428, filled ? 1 : 0.9)
@@ -462,10 +490,10 @@ export class CardCombatScene extends Phaser.Scene {
   }
 
   private redrawHpBars(): void {
-    const maxW = 420
+    const maxW = Math.min(520, Math.max(260, this.mainW - 220))
     const h = 10
-    const ex = MAIN_X
-    const ey = 36
+    const ex = this.mainX + 10
+    const ey = 32
     this.enemyHpBar.clear()
     this.enemyHpBar.fillStyle(0x2a1818, 1)
     this.enemyHpBar.fillRect(ex, ey, maxW, h)
@@ -475,7 +503,7 @@ export class CardCombatScene extends Phaser.Scene {
     this.enemyHpBar.lineStyle(1, GOLD, 0.6)
     this.enemyHpBar.strokeRect(ex, ey, maxW, h)
 
-    const py = 268
+    const py = 80
     this.playerHpBar.clear()
     this.playerHpBar.fillStyle(0x182a18, 1)
     this.playerHpBar.fillRect(ex, py, maxW, h)
@@ -563,7 +591,7 @@ export class CardCombatScene extends Phaser.Scene {
   }
 
   private panelWidth(): number {
-    return 900 - MAIN_X - 8
+    return this.mainW
   }
 
   private startRound(): void {
@@ -620,13 +648,13 @@ export class CardCombatScene extends Phaser.Scene {
     const panelW = this.panelWidth()
     const gap = 6
     const slotW = Math.floor((panelW - gap * (SLOTS_PER_ROW - 1)) / SLOTS_PER_ROW)
-    const slotH = 102
-    const baseY = 276
+    const slotH = Math.round(Phaser.Math.Clamp(this.scale.height * 0.18, 108, 140))
+    const baseY = this.scale.height - (slotH * 2 + 36)
     const rowGap = 10
     const ac = this.activeCol
 
     for (let col = 0; col < SLOTS_PER_ROW; col++) {
-      const x = MAIN_X + col * (slotW + gap)
+      const x = this.mainX + col * (slotW + gap)
       const tag =
         col === ac
           ? 'СЕЙЧАС'
@@ -650,7 +678,7 @@ export class CardCombatScene extends Phaser.Scene {
     }
 
     const hl = this.add.graphics()
-    const x0 = MAIN_X + ac * (slotW + gap)
+    const x0 = this.mainX + ac * (slotW + gap)
     hl.fillStyle(0xc9a227, 0.22)
     hl.fillRoundedRect(x0 - 4, baseY - 4, slotW + 8, (slotH + rowGap) * 2 + slotH + 8, 12)
     hl.lineStyle(3, GOLD, 0.75)
@@ -661,7 +689,7 @@ export class CardCombatScene extends Phaser.Scene {
     for (let row = 0; row < 2; row++) {
       const y = baseY + row * (slotH + rowGap)
       for (let col = 0; col < SLOTS_PER_ROW; col++) {
-        const x = MAIN_X + col * (slotW + gap)
+        const x = this.mainX + col * (slotW + gap)
         const card = this.playerGrid[row]![col]!
         const playable = col === ac
         this.cardContainers.push(
