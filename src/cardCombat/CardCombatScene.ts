@@ -715,15 +715,25 @@ export class CardCombatScene extends Phaser.Scene {
     }
 
     const bg = this.add.graphics()
+    const shadow = this.add.graphics()
     const drawBg = (hover: boolean) => {
+      shadow.clear()
       bg.clear()
-      const fill = !playable ? 0x121018 : hover ? 0x242432 : 0x1a1a24
+      const stroke = playable ? TYPE_COLOR[card.type] : 0x323040
+      const fill = !playable ? 0x14141c : hover ? 0x262634 : 0x1b1b26
+      // soft shadow (HS-like "card on table")
+      shadow.fillStyle(0x000000, playable ? 0.25 : 0.18)
+      shadow.fillRoundedRect(3, 4, w, h, 10)
+
+      // main card
       bg.fillStyle(fill, 1)
-      bg.fillRoundedRect(0, 0, w, h, 8)
-      const lineW = playable ? 3 : 1
-      const colStroke = playable ? TYPE_COLOR[card.type] : 0x3a3a48
-      bg.lineStyle(lineW, colStroke, playable ? 1 : 0.5)
-      bg.strokeRoundedRect(0, 0, w, h, 8)
+      bg.fillRoundedRect(0, 0, w, h, 10)
+      bg.lineStyle(playable ? 3 : 1, stroke, playable ? 0.95 : 0.45)
+      bg.strokeRoundedRect(0, 0, w, h, 10)
+
+      // inner frame
+      bg.lineStyle(1, 0x000000, 0.35)
+      bg.strokeRoundedRect(2, 2, w - 4, h - 4, 9)
     }
     drawBg(false)
 
@@ -747,11 +757,11 @@ export class CardCombatScene extends Phaser.Scene {
           : `Лечение +${eff.heal ?? 0} HP`
 
     const title = this.add
-      .text(6, 4, card.name, {
+      .text(10, 8, card.name, {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
-        fontSize: compact ? '12px' : '13px',
+        fontSize: compact ? '12px' : '14px',
         color: '#f0ecf8',
-        wordWrap: { width: w - 12 },
+        wordWrap: { width: w - 20 },
       })
       .setOrigin(0, 0)
 
@@ -767,36 +777,54 @@ export class CardCombatScene extends Phaser.Scene {
             .join(' · ')
         : ''
     const meta = this.add
-      .text(6, compact ? 22 : 24, `${typeLabel} · ${stat}${kwStr ? `\n${kwStr}` : ''}`, {
+      .text(10, compact ? 28 : 30, `${typeLabel} · ${stat}${kwStr ? `\n${kwStr}` : ''}`, {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
         fontSize: compact ? '10px' : '11px',
         color: '#a8a0b8',
-        wordWrap: { width: w - 12 },
+        wordWrap: { width: w - 20 },
       })
       .setOrigin(0, 0)
 
     const desc = this.add
-      .text(6, compact ? 38 : 40, card.description, {
+      .text(10, compact ? 52 : 54, card.description, {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
         fontSize: compact ? '9px' : '10px',
         color: '#8a8298',
-        wordWrap: { width: w - 12 },
+        wordWrap: { width: w - 20 },
         maxLines: 3,
       })
       .setOrigin(0, 0)
 
     const rowTag = this.add
-      .text(w - 4, 4, `Ряд ${row + 1}${playable ? ' · нажми' : ''}`, {
+      .text(w - 8, 8, playable ? 'Сыграть' : `Ход +${col}`, {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
         fontSize: '9px',
         color: playable ? '#c9a227' : '#5a5468',
       })
       .setOrigin(1, 0)
 
+    // HS-like stat bubble (for minions)
+    const statBubble = this.add.graphics()
+    if (isMinion) {
+      statBubble.fillStyle(0x0e0e14, 0.9)
+      statBubble.lineStyle(2, TYPE_COLOR[card.type], 0.9)
+      statBubble.fillCircle(22, h - 22, 16)
+      statBubble.strokeCircle(22, h - 22, 16)
+    }
+    const statText = isMinion
+      ? this.add
+          .text(22, h - 22, `${eff.minionAtk ?? 0}/${eff.minionHp ?? 1}`, {
+            fontFamily: 'system-ui,Segoe UI,sans-serif',
+            fontSize: '9px',
+            color: '#f0ecf8',
+          })
+          .setOrigin(0.5, 0.5)
+      : null
+
     const bpBadge =
       playable && bpNow > 0
         ? this.add
-            .text(w - 4, h - 36, `такт +${bpNow}`, {
+            .text(w - 8, h - 48, `такт +${bpNow}`, {
               fontFamily: 'system-ui,Segoe UI,sans-serif',
               fontSize: '9px',
               color: '#e8c84a',
@@ -812,7 +840,11 @@ export class CardCombatScene extends Phaser.Scene {
       hit.on('pointerdown', () => this.onPlayerPick(row))
     }
 
-    const children: Phaser.GameObjects.GameObject[] = [bg, title, meta, desc, rowTag, hit]
+    const children: Phaser.GameObjects.GameObject[] = [shadow, bg, title, meta, desc, rowTag, hit]
+    if (isMinion) {
+      children.push(statBubble)
+      if (statText) children.push(statText)
+    }
     if (bpBadge) {
       children.push(bpBadge)
     }

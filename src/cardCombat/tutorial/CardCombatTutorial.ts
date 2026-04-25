@@ -112,20 +112,9 @@ export class CardCombatTutorial {
     const root = this.scene.add.container(0, 0).setDepth(100)
     this.root = root
 
-    const dim = this.scene.add.graphics()
-    dim.fillStyle(0x050510, 0.72)
-    dim.fillRect(0, 0, W, H)
-    dim.setInteractive(
-      new Phaser.Geom.Rectangle(0, 0, W, H),
-      Phaser.Geom.Rectangle.Contains
-    )
-    dim.on('pointerdown', () => {
-      /* блок кликов по игре под оверлеем */
-    })
-
     const step = STEPS[this.step]!
     const bx = W / 2
-    const by = H - 120
+    const by = H - 18
     const pad = 16
     const maxW = Math.min(420, W - 24)
     const title = this.scene.add
@@ -155,11 +144,11 @@ export class CardCombatTutorial {
     const bh = pad * 2 + title.height + body.height + 52
     bg.fillStyle(0x14141f, 0.98)
     bg.lineStyle(2, 0xc9a227, 0.85)
-    bg.fillRoundedRect(-bw / 2, -bh + pad, bw, bh, 12)
-    bg.strokeRoundedRect(-bw / 2, -bh + pad, bw, bh, 12)
+    bg.fillRoundedRect(-bw / 2, -bh, bw, bh, 12)
+    bg.strokeRoundedRect(-bw / 2, -bh, bw, bh, 12)
 
     const btnSkip = this.scene.add
-      .text(-bw / 2 + 18, -18, 'Пропустить', {
+      .text(-bw / 2 + 18, -10, 'Закрыть', {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
         fontSize: '12px',
         color: '#9a93a8',
@@ -167,12 +156,11 @@ export class CardCombatTutorial {
       .setOrigin(0, 1)
       .setInteractive({ useHandCursor: true })
     btnSkip.on('pointerdown', () => {
-      writeSave({ done: true })
       this.destroyRoot()
     })
 
     const btnNext = this.scene.add
-      .text(bw / 2 - 18, -18, this.step === STEPS.length - 1 ? 'Готово' : 'Далее', {
+      .text(bw / 2 - 18, -10, this.step === STEPS.length - 1 ? 'Готово' : 'Далее', {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
         fontSize: '13px',
         color: '#c9a227',
@@ -192,6 +180,6 @@ export class CardCombatTutorial {
     })
 
     root.setPosition(bx, by)
-    root.add([dim, bg, title, body, btnSkip, btnNext])
+    root.add([bg, title, body, btnSkip, btnNext])
   }
 }
