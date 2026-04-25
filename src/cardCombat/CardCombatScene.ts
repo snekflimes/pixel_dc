@@ -70,6 +70,8 @@ export class CardCombatScene extends Phaser.Scene {
 
   private logLines: string[] = []
   private logText!: Phaser.GameObjects.Text
+  private logToggleBtn!: Phaser.GameObjects.Text
+  private logCollapsed = true
   private timerText!: Phaser.GameObjects.Text
   private arenaText!: Phaser.GameObjects.Text
   private playerHpText!: Phaser.GameObjects.Text
@@ -109,6 +111,7 @@ export class CardCombatScene extends Phaser.Scene {
   }
 
   private get logW(): number {
+    if (this.logCollapsed) return 56
     return Math.round(Phaser.Math.Clamp(this.scale.width * 0.24, 170, 260))
   }
 
@@ -198,6 +201,21 @@ export class CardCombatScene extends Phaser.Scene {
         wordWrap: { width: this.logW - 22 },
       })
       .setOrigin(0, 0)
+    this.logToggleBtn = this.add
+      .text(10, 10, 'ЛОГ', {
+        fontFamily: 'system-ui,Segoe UI,sans-serif',
+        fontSize: '11px',
+        color: '#c9a227',
+        backgroundColor: '#1a1528',
+        padding: { left: 10, right: 10, top: 6, bottom: 6 },
+      })
+      .setOrigin(0, 0)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(5)
+    this.logToggleBtn.on('pointerdown', () => {
+      this.logCollapsed = !this.logCollapsed
+      this.relayoutUi()
+    })
 
     this.enemyHpText = this.add
       .text(this.mainX + 10, 10, '', {
@@ -284,6 +302,15 @@ export class CardCombatScene extends Phaser.Scene {
     this.tutorial = new CardCombatTutorial(this)
     this.tutorial.mountHelpButton(860, 8)
     this.tutorial.startIfNewUser(600)
+
+    this.scale.on('resize', () => {
+      this.relayoutUi()
+      this.clearCardPanel()
+      this.layoutPlayerCards()
+      this.layoutMinionStrips()
+      this.refreshBpStatus()
+      this.redrawHpBars()
+    })
 
     if (this.mode !== 'ai') {
       this.appendLog(
@@ -398,6 +425,33 @@ export class CardCombatScene extends Phaser.Scene {
       this.logLines.splice(0, this.logLines.length - max)
     }
     this.logText.setText(this.logLines.join('\n'))
+  }
+
+  private relayoutUi(): void {
+    // left log panel
+    this.logPanelBg.setPosition(this.logW / 2, this.scale.height / 2)
+    this.logPanelBg.setSize(this.logW - 8, this.scale.height - 18)
+    this.logText.setPosition(10, 44)
+    this.logText.setStyle({ wordWrap: { width: this.logW - 22 } })
+    this.logText.setVisible(!this.logCollapsed)
+    this.logToggleBtn.setText(this.logCollapsed ? 'ЛОГ ›' : '‹ ЛОГ')
+
+    // top bar
+    this.topBarBg.setPosition(this.mainX + this.mainW / 2, 44)
+    this.topBarBg.setSize(this.mainW, 88)
+
+    // top texts (main area)
+    this.enemyHpText.setPosition(this.mainX + 10, 10)
+    this.timerText.setPosition(this.mainX + this.mainW - 10, 10)
+    this.bpStatusText.setPosition(this.mainX + 10, 32)
+    this.turnStatusText.setPosition(this.mainX + 10, 76)
+    this.arenaText.setPosition(this.mainX + this.mainW / 2, 106)
+
+    // sprites
+    const cx = this.mainX + this.mainW / 2
+    const boardY = 170
+    this.playerSprite.setPosition(cx - 170, boardY)
+    this.enemySprite.setPosition(cx + 170, boardY)
   }
 
   private updateTimerDisplay(): void {
@@ -656,15 +710,21 @@ export class CardCombatScene extends Phaser.Scene {
   private layoutPlayerCards(): void {
     if (!this.playerGrid) return
     const panelW = this.panelWidth()
-    const gap = 6
-    const slotW = Math.floor((panelW - gap * (SLOTS_PER_ROW - 1)) / SLOTS_PER_ROW)
-    const slotH = Math.round(Phaser.Math.Clamp(this.scale.height * 0.18, 108, 140))
-    const baseY = this.scale.height - (slotH * 2 + 36)
+    const gap = 8
+    const bigW = Math.round(panelW * 0.44)
+    const smallW = Math.floor((panelW - bigW - gap * 3) / 3)
+    const slotHBig = Math.round(Phaser.Math.Clamp(this.scale.height * 0.22, 132, 170))
+    const slotHSmall = Math.round(slotHBig * 0.82)
+    const baseY = this.scale.height - (slotHBig * 2 + 34)
     const rowGap = 10
     const ac = this.activeCol
 
     for (let col = 0; col < SLOTS_PER_ROW; col++) {
-      const x = this.mainX + col * (slotW + gap)
+      const w = col === 0 ? bigW : smallW
+      const x =
+        col === 0
+          ? this.mainX
+          : this.mainX + bigW + gap + (col - 1) * (smallW + gap)
       const tag =
         col === ac
           ? 'СЕЙЧАС'
@@ -675,7 +735,7 @@ export class CardCombatScene extends Phaser.Scene {
               : 'Через 3'
       const tagColor = col === ac ? '#e8d060' : '#5a5468'
       const head = this.add
-        .text(slotW / 2, 0, tag, {
+        .text(w / 2, 0, tag, {
           fontFamily: 'system-ui,Segoe UI,sans-serif',
           fontSize: '10px',
           color: tagColor,
@@ -688,22 +748,28 @@ export class CardCombatScene extends Phaser.Scene {
     }
 
     const hl = this.add.graphics()
-    const x0 = this.mainX + ac * (slotW + gap)
+    const x0 = this.mainX
     hl.fillStyle(0xc9a227, 0.22)
-    hl.fillRoundedRect(x0 - 4, baseY - 4, slotW + 8, (slotH + rowGap) * 2 + slotH + 8, 12)
+    hl.fillRoundedRect(x0 - 4, baseY - 4, bigW + 8, (slotHBig + rowGap) * 2 + slotHBig + 8, 12)
     hl.lineStyle(3, GOLD, 0.75)
-    hl.strokeRoundedRect(x0 - 4, baseY - 4, slotW + 8, (slotH + rowGap) * 2 + slotH + 8, 12)
+    hl.strokeRoundedRect(x0 - 4, baseY - 4, bigW + 8, (slotHBig + rowGap) * 2 + slotHBig + 8, 12)
     hl.setDepth(0)
     this.columnHighlight = hl
 
     for (let row = 0; row < 2; row++) {
-      const y = baseY + row * (slotH + rowGap)
+      const y = baseY + row * (slotHBig + rowGap)
       for (let col = 0; col < SLOTS_PER_ROW; col++) {
-        const x = this.mainX + col * (slotW + gap)
+        const w = col === 0 ? bigW : smallW
+        const h = col === 0 ? slotHBig : slotHSmall
+        const x =
+          col === 0
+            ? this.mainX
+            : this.mainX + bigW + gap + (col - 1) * (smallW + gap)
+        const y2 = col === 0 ? y : y + Math.round((slotHBig - slotHSmall) / 2)
         const card = this.playerGrid[row]![col]!
         const playable = col === ac
         this.cardContainers.push(
-          this.buildCardButton(card, x, y, slotW, slotH, row as 0 | 1, col, playable)
+          this.buildCardButton(card, x, y2, w, h, row as 0 | 1, col, playable)
         )
       }
     }
