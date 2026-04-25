@@ -1,10 +1,11 @@
 import Phaser from 'phaser'
 import Peer, { type DataConnection } from 'peerjs'
 import { getCardById, getEnabledCardIds } from './cards'
-import { Deck } from './deck'
+import { Deck, seedStringToRng } from './deck'
 import { withStatBonus } from './cardBonus'
-import { resolveRound } from './resolveRound'
-import type { CardDef, RoundResolution } from './types'
+import { resolveTurn } from './resolveTurn'
+import type { BattleSnapshot, CardDef, MinionState, TurnFxTotals, TurnResolution } from './types'
+import { CardCombatTutorial } from './tutorial/CardCombatTutorial'
 import {
   createClientAndConnect,
   createHostPeer,
@@ -19,6 +20,8 @@ const MAIN_X = LOG_W + 8
 const GOLD = 0xc9a227
 const BG = 0x0b0b12
 const SLOTS_PER_ROW = 4
+/** После сдвига колоды активный столбец всегда слева (индекс 0). */
+const ACTIVE_COL = 0
 
 const TYPE_COLOR: Record<CardDef['type'], number> = {
   attack: 0xcc4444,
@@ -36,6 +39,13 @@ export class CardCombatScene extends Phaser.Scene {
   private turnSeconds = 15
   private playerHp = 100
   private enemyHp = 100
+  private playerArmor = 0
+  private enemyArmor = 0
+  private playerBoard: MinionState[] = []
+  private enemyBoard: MinionState[] = []
+  private uidSeq = 0
+  /** Одинаковый сид для PvP (код комнаты) — синхронный RNG в resolveTurn. */
+  private pvpSyncSeed = ''
 
   private playerGrid: CardDef[][] | null = null
   private enemyGrid: CardDef[][] | null = null
@@ -70,6 +80,11 @@ export class CardCombatScene extends Phaser.Scene {
   private playerSprite!: Phaser.GameObjects.Image
   private enemySprite!: Phaser.GameObjects.Image
   private menuBtn?: Phaser.GameObjects.Text
+  private turnStatusText!: Phaser.GameObjects.Text
+  private bpPips!: Phaser.GameObjects.Graphics
+  private minionStripEnemy!: Phaser.GameObjects.Container
+  private minionStripPlayer!: Phaser.GameObjects.Container
+  private tutorial?: CardCombatTutorial
 
   /** Очки тактики на весь матч (5). Тратятся в активном столбце, до +2 на карту за раунд. */
   private static readonly BP_MATCH = 5
@@ -92,7 +107,7 @@ export class CardCombatScene extends Phaser.Scene {
   }
 
   private get activeCol(): number {
-    return this.roundIndex % SLOTS_PER_ROW
+    return ACTIVE_COL
   }
 
   init(data?: {
@@ -137,6 +152,11 @@ export class CardCombatScene extends Phaser.Scene {
   create(): void {
     this.playerHp = this.maxHp
     this.enemyHp = this.maxHp
+    this.playerArmor = 0
+    this.enemyArmor = 0
+    this.playerBoard = []
+    this.enemyBoard = []
+    this.pvpSyncSeed = ''
     this.phase = 'select'
     this.roundIndex = 0
 
@@ -194,13 +214,9 @@ export class CardCombatScene extends Phaser.Scene {
     this.enemySprite = this.add.image(MAIN_X + 560, 155, 'spr_enemy').setDepth(2)
     this.enemySprite.setFlipX(true)
 
-    this.appendLog('Карточный бой: сетка 2×4 — все карты открыты.')
-    this.appendLog(
-      'Активный столбец идёт слева направо (1 → 4). Выберите верхнюю или нижнюю карту в подсвеченном столбце.'
-    )
-    this.appendLog(
-      'Очки тактики: 5 за матч, кнопка «+» в активном столбце, до +2 к числу на карте в этом раунде.'
-    )
+    this.appendLog('Карточный бой: очередь 2×4 (видно 4 хода вперёд). Играете с левого столбца.')
+    this.appendLog('Заклинания бьют по герою / дают броню / лечат. Существа остаются на поле и атакуют сами.')
+    this.appendLog('Тактика: 5 очков за матч — кнопка «+ тактика» на карте в активном столбце (до +2 за ход).')
 
     this.matchBpPlayer = CardCombatScene.BP_MATCH
     this.matchBpEnemy = CardCombatScene.BP_MATCH
@@ -218,10 +234,28 @@ export class CardCombatScene extends Phaser.Scene {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
         fontSize: '11px',
         color: '#9a8a68',
-        wordWrap: { width: 600 },
+        wordWrap: { width: 520 },
       })
       .setOrigin(0, 0)
+    this.bpPips = this.add.graphics().setDepth(3)
     this.refreshBpStatus()
+
+    this.turnStatusText = this.add
+      .text(MAIN_X, 52, '', {
+        fontFamily: 'system-ui,Segoe UI,sans-serif',
+        fontSize: '12px',
+        color: '#c8c0d8',
+        wordWrap: { width: 520 },
+      })
+      .setOrigin(0, 0)
+      .setDepth(3)
+
+    this.minionStripEnemy = this.add.container(MAIN_X, 72).setDepth(3)
+    this.minionStripPlayer = this.add.container(MAIN_X, 200).setDepth(3)
+
+    this.tutorial = new CardCombatTutorial(this)
+    this.tutorial.mountHelpButton(860, 8)
+    this.tutorial.startIfNewUser(600)
 
     if (this.mode !== 'ai') {
       this.appendLog(
@@ -232,14 +266,23 @@ export class CardCombatScene extends Phaser.Scene {
     }
 
     const pool = [...getEnabledCardIds()]
-    this.playerDeck = new Deck(pool, () => Math.random())
-    this.enemyDeck = new Deck(pool, () => Math.random())
 
     this.events.once('shutdown', () => this.destroyPvpPeer())
 
-    void this.bootPvpIfNeeded().then(() => {
-      this.startRound()
-    })
+    if (this.mode === 'ai') {
+      this.playerDeck = new Deck(pool, () => Math.random())
+      this.enemyDeck = new Deck(pool, () => Math.random())
+      void this.bootPvpIfNeeded().then(() => {
+        this.startRound()
+      })
+    } else {
+      void this.bootPvpIfNeeded().then(() => {
+        const seed = this.pvpSyncSeed || 'pvp'
+        this.playerDeck = new Deck(pool, seedStringToRng(`${seed}|deckP`))
+        this.enemyDeck = new Deck(pool, seedStringToRng(`${seed}|deckE`))
+        this.startRound()
+      })
+    }
   }
 
   private destroyPvpPeer(): void {
@@ -260,6 +303,7 @@ export class CardCombatScene extends Phaser.Scene {
       if (this.mode === 'pvp_host') {
         const { peer, id } = await createHostPeer()
         this.peer = peer
+        this.pvpSyncSeed = id
         this.appendLog(`PvP: ваш код комнаты (отдайте второму игроку): ${id}`)
         this.arenaText.setText(`Код комнаты: ${id}\nОжидаем подключения…`)
         const conn = await waitForConnection(peer)
@@ -273,6 +317,7 @@ export class CardCombatScene extends Phaser.Scene {
         }
         const { peer, conn } = await createClientAndConnect(this.hostPeerIdForClient)
         this.peer = peer
+        this.pvpSyncSeed = this.hostPeerIdForClient.trim()
         this.pvpConn = conn
         this.setupPvpDataHandler(conn)
         this.appendLog('PvP: подключено к хосту.')
@@ -315,12 +360,14 @@ export class CardCombatScene extends Phaser.Scene {
       return
     }
     this.updateTimerDisplay()
+    this.updateTurnStatus()
   }
 
   private appendLog(line: string): void {
     this.logLines.push(line)
-    if (this.logLines.length > 42) {
-      this.logLines.splice(0, this.logLines.length - 42)
+    const max = 56
+    if (this.logLines.length > max) {
+      this.logLines.splice(0, this.logLines.length - max)
     }
     this.logText.setText(this.logLines.join('\n'))
   }
@@ -334,7 +381,32 @@ export class CardCombatScene extends Phaser.Scene {
 
   private refreshBpStatus(): void {
     this.bpStatusText.setText(
-      `Тактика: осталось ${this.matchBpPlayer} / ${CardCombatScene.BP_MATCH} (до +${CardCombatScene.BP_MAX_ON_CARD} к числу на карту в активном столбце за раунд).`
+      `Тактика: ${this.matchBpPlayer} / ${CardCombatScene.BP_MATCH} — «+ тактика» на карте слева, до +${CardCombatScene.BP_MAX_ON_CARD} к числу за ход.`
+    )
+    this.redrawBpPips()
+  }
+
+  private redrawBpPips(): void {
+    const g = this.bpPips
+    g.clear()
+    const x0 = MAIN_X + 400
+    const y = 34
+    for (let i = 0; i < CardCombatScene.BP_MATCH; i++) {
+      const filled = i < this.matchBpPlayer
+      g.fillStyle(filled ? GOLD : 0x3a3428, filled ? 1 : 0.9)
+      g.fillCircle(x0 + i * 12, y, 4)
+      g.lineStyle(1, 0x5a5040, 0.8)
+      g.strokeCircle(x0 + i * 12, y, 4)
+    }
+  }
+
+  private updateTurnStatus(): void {
+    const wait =
+      this.mode !== 'ai' && this.pvpLocalRow !== null && this.pvpRemote === null
+        ? '\nОжидание хода соперника…'
+        : ''
+    this.turnStatusText.setText(
+      `Раунд ${this.roundIndex + 1} · ход из левого столбца (очередь сдвигается после розыгрыша).${wait}`
     )
   }
 
@@ -385,6 +457,7 @@ export class CardCombatScene extends Phaser.Scene {
     )
     this.clearCardPanel()
     this.layoutPlayerCards()
+    this.updateTurnStatus()
     this.refreshBpStatus()
   }
 
@@ -412,8 +485,72 @@ export class CardCombatScene extends Phaser.Scene {
     this.playerHpBar.lineStyle(1, GOLD, 0.6)
     this.playerHpBar.strokeRect(ex, py, maxW, h)
 
-    this.enemyHpText.setText(`Противник — ${this.enemyHp} / ${this.maxHp}`)
-    this.playerHpText.setText(`Вы — ${this.playerHp} / ${this.maxHp}`)
+    const ea = this.enemyArmor > 0 ? ` · броня ${this.enemyArmor}` : ''
+    const pa = this.playerArmor > 0 ? ` · броня ${this.playerArmor}` : ''
+    this.enemyHpText.setText(`Противник — ${this.enemyHp} / ${this.maxHp}${ea}`)
+    this.playerHpText.setText(`Вы — ${this.playerHp} / ${this.maxHp}${pa}`)
+  }
+
+  private layoutMinionStrips(): void {
+    this.minionStripEnemy.removeAll(true)
+    this.minionStripPlayer.removeAll(true)
+    const slotW = 64
+    const gap = 4
+    const maxN = 5
+    const drawStrip = (
+      cont: Phaser.GameObjects.Container,
+      board: MinionState[],
+      yLabel: string
+    ) => {
+      const label = this.add
+        .text(0, -16, yLabel, {
+          fontFamily: 'system-ui,Segoe UI,sans-serif',
+          fontSize: '10px',
+          color: '#7a7388',
+        })
+        .setOrigin(0, 0)
+      cont.add(label)
+      for (let i = 0; i < maxN; i++) {
+        const x = i * (slotW + gap)
+        const g = this.add.graphics()
+        g.fillStyle(0x16161e, 1)
+        g.lineStyle(1, 0x3a3a48, 0.9)
+        g.fillRoundedRect(x, 0, slotW, 44, 6)
+        g.strokeRoundedRect(x, 0, slotW, 44, 6)
+        cont.add(g)
+        const m = board[i]
+        if (m) {
+          const taunt = m.taunt ? 'П ' : ''
+          const ds = m.divineShield ? 'Щ ' : ''
+          const ls = m.lifesteal ? 'К ' : ''
+          const t = this.add
+            .text(
+              x + 4,
+              4,
+              `${m.name.slice(0, 9)}${m.name.length > 9 ? '…' : ''}\n${taunt}${ds}${ls}${m.atk}/${m.hp}`,
+              {
+                fontFamily: 'system-ui,Segoe UI,sans-serif',
+                fontSize: '9px',
+                color: '#d0c8e0',
+                wordWrap: { width: slotW - 8 },
+              }
+            )
+            .setOrigin(0, 0)
+          cont.add(t)
+        } else {
+          const t = this.add
+            .text(x + slotW / 2, 22, '—', {
+              fontFamily: 'system-ui,Segoe UI,sans-serif',
+              fontSize: '11px',
+              color: '#4a4458',
+            })
+            .setOrigin(0.5, 0.5)
+          cont.add(t)
+        }
+      }
+    }
+    drawStrip(this.minionStripEnemy, this.enemyBoard, 'Поле врага')
+    drawStrip(this.minionStripPlayer, this.playerBoard, 'Ваши существа')
   }
 
   private clearCardPanel(): void {
@@ -455,19 +592,25 @@ export class CardCombatScene extends Phaser.Scene {
       this.prefillEnemyBpInActiveColumn()
     }
 
-    const pFlat = this.playerDeck.drawEight()
-    const eFlat = this.enemyDeck.drawEight()
-    this.playerGrid = this.playerDeck.toGrid(pFlat)
-    this.enemyGrid = this.enemyDeck.toGrid(eFlat)
+    if (!this.playerDeck.hasGrid()) {
+      this.playerGrid = this.playerDeck.initBattleGrid()
+      this.enemyGrid = this.enemyDeck.initBattleGrid()
+    } else {
+      this.playerGrid = this.playerDeck.getGrid()
+      this.enemyGrid = this.enemyDeck.getGrid()
+    }
+
+    this.appendLog(`── Раунд ${this.roundIndex + 1} ──`)
 
     this.clearCardPanel()
 
-    const col = this.activeCol
     this.arenaText.setText(
-      `Столбец ${col + 1} из 4 (ход слева направо).\nВыберите верхнюю или нижнюю карту в золотой подсветке.`
+      `Ход ${this.roundIndex + 1}. Слева — текущий столбец.\nВыберите верхнюю или нижнюю карту. После хода колонки сдвинутся.`
     )
+    this.updateTurnStatus()
 
     this.layoutPlayerCards()
+    this.layoutMinionStrips()
     this.refreshBpStatus()
     this.redrawHpBars()
   }
@@ -482,12 +625,36 @@ export class CardCombatScene extends Phaser.Scene {
     const rowGap = 10
     const ac = this.activeCol
 
+    for (let col = 0; col < SLOTS_PER_ROW; col++) {
+      const x = MAIN_X + col * (slotW + gap)
+      const tag =
+        col === ac
+          ? 'СЕЙЧАС'
+          : col === ac + 1
+            ? 'Далее'
+            : col === ac + 2
+              ? 'Через 2'
+              : 'Через 3'
+      const tagColor = col === ac ? '#e8d060' : '#5a5468'
+      const head = this.add
+        .text(slotW / 2, 0, tag, {
+          fontFamily: 'system-ui,Segoe UI,sans-serif',
+          fontSize: '10px',
+          color: tagColor,
+        })
+        .setOrigin(0.5, 1)
+      const hc = this.add.container(x, baseY - 14)
+      hc.add(head)
+      hc.setDepth(1)
+      this.cardContainers.push(hc)
+    }
+
     const hl = this.add.graphics()
     const x0 = MAIN_X + ac * (slotW + gap)
-    hl.fillStyle(0xc9a227, 0.16)
-    hl.fillRoundedRect(x0 - 3, baseY - 3, slotW + 6, (slotH + rowGap) * 2 + slotH + 6, 10)
-    hl.lineStyle(2, GOLD, 0.55)
-    hl.strokeRoundedRect(x0 - 3, baseY - 3, slotW + 6, (slotH + rowGap) * 2 + slotH + 6, 10)
+    hl.fillStyle(0xc9a227, 0.22)
+    hl.fillRoundedRect(x0 - 4, baseY - 4, slotW + 8, (slotH + rowGap) * 2 + slotH + 8, 12)
+    hl.lineStyle(3, GOLD, 0.75)
+    hl.strokeRoundedRect(x0 - 4, baseY - 4, slotW + 8, (slotH + rowGap) * 2 + slotH + 8, 12)
     hl.setDepth(0)
     this.columnHighlight = hl
 
@@ -516,7 +683,7 @@ export class CardCombatScene extends Phaser.Scene {
   ): Phaser.GameObjects.Container {
     const container = this.add.container(x, y)
     if (!playable) {
-      container.setAlpha(0.38)
+      container.setAlpha(0.52)
     }
 
     const bg = this.add.graphics()
@@ -533,15 +700,23 @@ export class CardCombatScene extends Phaser.Scene {
     drawBg(false)
 
     const compact = w < 190
-    const typeLabel =
-      card.type === 'attack' ? 'Атака' : card.type === 'defense' ? 'Защита' : 'Навык'
+    const isMinion = card.kind === 'minion'
+    const typeLabel = isMinion
+      ? 'Существо'
+      : card.type === 'attack'
+        ? 'Заклинание · урон'
+        : card.type === 'defense'
+          ? 'Заклинание · броня'
+          : 'Заклинание · лечение'
     const eff = withStatBonus(card, this.roundPlayerBp[row]![col]!)
-    const stat =
-      eff.type === 'attack'
+    const bpNow = this.roundPlayerBp[row]![col]!
+    const stat = isMinion
+      ? `${eff.minionAtk ?? 0} / ${eff.minionHp ?? 1}`
+      : eff.type === 'attack'
         ? `Урон ${eff.damage ?? 0}`
         : eff.type === 'defense'
-          ? `Блок ${eff.block ?? 0}`
-          : `+${eff.heal ?? 0} HP`
+          ? `Броня +${eff.block ?? 0}`
+          : `Лечение +${eff.heal ?? 0} HP`
 
     const title = this.add
       .text(6, 4, card.name, {
@@ -552,8 +727,19 @@ export class CardCombatScene extends Phaser.Scene {
       })
       .setOrigin(0, 0)
 
+    const kw = card.keywords
+    const kwStr =
+      isMinion && kw
+        ? [
+            kw.taunt ? 'Провокация' : '',
+            kw.divineShield ? 'Щит' : '',
+            kw.lifesteal ? 'Кража жизни' : '',
+          ]
+            .filter(Boolean)
+            .join(' · ')
+        : ''
     const meta = this.add
-      .text(6, compact ? 22 : 24, `${typeLabel} · ${stat}`, {
+      .text(6, compact ? 22 : 24, `${typeLabel} · ${stat}${kwStr ? `\n${kwStr}` : ''}`, {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
         fontSize: compact ? '10px' : '11px',
         color: '#a8a0b8',
@@ -572,12 +758,23 @@ export class CardCombatScene extends Phaser.Scene {
       .setOrigin(0, 0)
 
     const rowTag = this.add
-      .text(w - 4, 4, `Ряд ${row + 1} · ${col + 1}`, {
+      .text(w - 4, 4, `Ряд ${row + 1}${playable ? ' · нажми' : ''}`, {
         fontFamily: 'system-ui,Segoe UI,sans-serif',
         fontSize: '9px',
         color: playable ? '#c9a227' : '#5a5468',
       })
       .setOrigin(1, 0)
+
+    const bpBadge =
+      playable && bpNow > 0
+        ? this.add
+            .text(w - 4, h - 36, `такт +${bpNow}`, {
+              fontFamily: 'system-ui,Segoe UI,sans-serif',
+              fontSize: '9px',
+              color: '#e8c84a',
+            })
+            .setOrigin(1, 1)
+        : null
 
     const hit = this.add.rectangle(w / 2, h / 2, w, h, 0x000000, 0)
     if (playable) {
@@ -588,6 +785,9 @@ export class CardCombatScene extends Phaser.Scene {
     }
 
     const children: Phaser.GameObjects.GameObject[] = [bg, title, meta, desc, rowTag, hit]
+    if (bpBadge) {
+      children.push(bpBadge)
+    }
 
     if (playable) {
       const canAdd =
@@ -596,31 +796,43 @@ export class CardCombatScene extends Phaser.Scene {
         (this.mode === 'ai' || this.pvpLocalRow === null) &&
         this.matchBpPlayer > 0 &&
         this.roundPlayerBp[row]![col]! < CardCombatScene.BP_MAX_ON_CARD
-      const addLabel = this.add
-        .text(w - 4, h - 2, '+', {
+      const tactBg = this.add.graphics()
+      const tw = Math.min(86, w - 8)
+      const th = 22
+      const tx = w - tw - 4
+      const ty = h - th - 4
+      const drawTact = (on: boolean) => {
+        tactBg.clear()
+        tactBg.fillStyle(canAdd ? (on ? 0x3a3018 : 0x2a2418) : 0x1a1814, 1)
+        tactBg.lineStyle(1, canAdd ? GOLD : 0x4a4030, canAdd ? 0.85 : 0.35)
+        tactBg.fillRoundedRect(tx, ty, tw, th, 6)
+        tactBg.strokeRoundedRect(tx, ty, tw, th, 6)
+      }
+      drawTact(false)
+      const tactLabel = this.add
+        .text(tx + tw / 2, ty + th / 2, '+ тактика', {
           fontFamily: 'system-ui,Segoe UI,sans-serif',
-          fontSize: '18px',
-          color: canAdd ? '#e8c84a' : '#5a5040',
+          fontSize: '10px',
+          color: canAdd ? '#f0e8b8' : '#5a5048',
         })
-        .setOrigin(1, 1)
-      const addHint = this.add
-        .text(w - 22, h - 20, 'такт', {
-          fontFamily: 'system-ui,Segoe UI,sans-serif',
-          fontSize: '8px',
-          color: '#7a7058',
-        })
-        .setOrigin(0.5, 1)
-      const addHit = this.add.rectangle(w - 16, h - 12, 28, 28, 0x000000, 0)
+        .setOrigin(0.5, 0.5)
+      const addHit = this.add.rectangle(tx + tw / 2, ty + th / 2, tw, th, 0x000000, 0)
       if (canAdd) {
         addHit.setInteractive({ useHandCursor: true })
-        addHit.on('pointerover', () => drawBg(true))
-        addHit.on('pointerout', () => drawBg(false))
+        addHit.on('pointerover', () => {
+          drawTact(true)
+          drawBg(true)
+        })
+        addHit.on('pointerout', () => {
+          drawTact(false)
+          drawBg(false)
+        })
         addHit.on('pointerdown', (_p: Phaser.Input.Pointer, _lx: number, _ly: number, ev: Event) => {
           ev.stopPropagation()
           this.tryAddPlayerBp(row, col)
         })
       }
-      children.push(addHint, addLabel, addHit)
+      children.push(tactBg, tactLabel, addHit)
     }
 
     container.add(children)
@@ -659,6 +871,7 @@ export class CardCombatScene extends Phaser.Scene {
         cardId: card.id,
         cardBp: this.roundPlayerBp[row]![ac]!,
       })
+      this.updateTurnStatus()
       this.tryFinishPvpRound()
       return
     }
@@ -692,12 +905,8 @@ export class CardCombatScene extends Phaser.Scene {
     const pCard = withStatBonus(pBase, pBp)
     const eCard = withStatBonus(eBase, eBp)
 
-    const flatP = [...this.playerGrid[0]!, ...this.playerGrid[1]!]
-    const flatE = [...this.enemyGrid[0]!, ...this.enemyGrid[1]!]
-    this.playerDeck.afterRound(flatP)
-    this.enemyDeck.afterRound(flatE)
-
-    this.applyResolvedRound(pCard, eCard, { pBonus: pBp, eBonus: eBp })
+    const eRow = this.pvpRemote.row
+    this.applyTurnResult(pCard, eCard, { pBonus: pBp, eBonus: eBp }, this.pvpLocalRow!, eRow)
   }
 
   private finishRoundAi(playerPick: 0 | 1): void {
@@ -714,49 +923,56 @@ export class CardCombatScene extends Phaser.Scene {
     const pCard = withStatBonus(pBase, pBp)
     const eCard = withStatBonus(eBase, eBp)
 
-    const flatP = [...this.playerGrid[0]!, ...this.playerGrid[1]!]
-    const flatE = [...this.enemyGrid[0]!, ...this.enemyGrid[1]!]
-    this.playerDeck.afterRound(flatP)
-    this.enemyDeck.afterRound(flatE)
-
-    this.applyResolvedRound(pCard, eCard, { pBonus: pBp, eBonus: eBp })
+    this.applyTurnResult(pCard, eCard, { pBonus: pBp, eBonus: eBp }, playerPick, ePick)
   }
 
-  private applyResolvedRound(
+  private applyTurnResult(
     pCard: CardDef,
     eCard: CardDef,
-    meta?: { pBonus: number; eBonus: number }
+    meta: { pBonus: number; eBonus: number },
+    playerRow: 0 | 1,
+    enemyRow: 0 | 1
   ): void {
-    if (meta && meta.pBonus > 0) {
+    if (meta.pBonus > 0) {
       this.appendLog(`Ваша тактика: +${meta.pBonus} к числу на карте.`)
     }
-    if (meta && meta.eBonus > 0) {
+    if (meta.eBonus > 0) {
       this.appendLog(`Тактика противника: +${meta.eBonus}.`)
     }
-    const res = resolveRound(pCard, eCard)
 
-    const nextPlayerHp = Math.max(
-      0,
-      this.playerHp - res.dmgToPlayer + res.healPlayer
-    )
-    const nextEnemyHp = Math.max(
-      0,
-      this.enemyHp - res.dmgToEnemy + res.healEnemy
-    )
+    const snap: BattleSnapshot = {
+      playerHp: this.playerHp,
+      enemyHp: this.enemyHp,
+      playerArmor: this.playerArmor,
+      enemyArmor: this.enemyArmor,
+      playerBoard: this.playerBoard.map((m) => ({ ...m })),
+      enemyBoard: this.enemyBoard.map((m) => ({ ...m })),
+    }
+    const rng =
+      this.mode === 'ai'
+        ? () => Math.random()
+        : seedStringToRng(`${this.pvpSyncSeed}|resolve|${this.roundIndex}|${pCard.id}|${eCard.id}`)
+    const res = resolveTurn(snap, pCard, eCard, () => `m_${Date.now()}_${this.uidSeq++}`, rng)
 
-    this.arenaText.setText(
-      `Раскрытие:\nВы — «${pCard.name}»\nПротивник — «${eCard.name}»`
-    )
+    this.arenaText.setText(`Раскрытие:\nВы — «${pCard.name}»\nПротивник — «${eCard.name}»`)
 
     for (const line of res.lines) {
       this.appendLog(line)
     }
-    this.playRoundFx(pCard, eCard, res, () => {
-      this.playerHp = nextPlayerHp
-      this.enemyHp = nextEnemyHp
-      this.redrawHpBars()
 
-      this.appendLog(`Итог по HP: вы ${this.playerHp}, противник ${this.enemyHp}.`)
+    this.playTurnFx(res, () => {
+      this.playerHp = res.snapshot.playerHp
+      this.enemyHp = res.snapshot.enemyHp
+      this.playerArmor = res.snapshot.playerArmor
+      this.enemyArmor = res.snapshot.enemyArmor
+      this.playerBoard = res.snapshot.playerBoard
+      this.enemyBoard = res.snapshot.enemyBoard
+      this.redrawHpBars()
+      this.layoutMinionStrips()
+
+      this.appendLog(
+        `Итог: вы ${this.playerHp} HP${this.playerArmor ? ` (+${this.playerArmor} брони)` : ''}, противник ${this.enemyHp} HP${this.enemyArmor ? ` (+${this.enemyArmor} брони)` : ''}.`
+      )
 
       if (this.playerHp <= 0 || this.enemyHp <= 0) {
         this.phase = 'ended'
@@ -772,6 +988,11 @@ export class CardCombatScene extends Phaser.Scene {
         this.destroyPvpPeer()
         return
       }
+
+      this.playerDeck.advanceAfterPlay(playerRow)
+      this.enemyDeck.advanceAfterPlay(enemyRow)
+      this.playerGrid = this.playerDeck.getGrid()
+      this.enemyGrid = this.enemyDeck.getGrid()
 
       this.roundIndex += 1
       this.time.delayedCall(1600, () => {
@@ -805,12 +1026,10 @@ export class CardCombatScene extends Phaser.Scene {
     })
   }
 
-  private playRoundFx(
-    pCard: CardDef,
-    eCard: CardDef,
-    res: RoundResolution,
-    done: () => void
-  ): void {
+  private playTurnFx(res: TurnResolution, done: () => void): void {
+    const fx = res.fx
+    const pCard = res.playerCardFx
+    const eCard = res.enemyCardFx
     let acc = 0
     const add = (delay: number, fn: () => void) => {
       acc += delay
@@ -818,58 +1037,60 @@ export class CardCombatScene extends Phaser.Scene {
     }
 
     add(0, () => {
-      this.fxForCard('player', pCard, res)
+      this.fxForCard('player', pCard, fx)
     })
     add(140, () => {
-      this.fxForCard('enemy', eCard, res)
+      this.fxForCard('enemy', eCard, fx)
     })
     add(160, () => {
-      if (res.dmgToEnemy > 0) {
+      if (fx.dmgToEnemyHero > 0) {
         this.fxDamageLine(this.playerSprite, this.enemySprite, 0xff6644)
         this.flashSprite(this.enemySprite, 0xff4444)
         this.shakeSprite(this.enemySprite)
-        this.floatNumber(this.enemySprite.x, this.enemySprite.y - 50, `-${res.dmgToEnemy}`, '#ff6666')
+        this.floatNumber(this.enemySprite.x, this.enemySprite.y - 50, `-${fx.dmgToEnemyHero}`, '#ff6666')
       }
     })
     add(120, () => {
-      if (res.dmgToPlayer > 0) {
+      if (fx.dmgToPlayerHero > 0) {
         this.fxDamageLine(this.enemySprite, this.playerSprite, 0xff8844)
         this.flashSprite(this.playerSprite, 0xff4444)
         this.shakeSprite(this.playerSprite)
-        this.floatNumber(this.playerSprite.x, this.playerSprite.y - 50, `-${res.dmgToPlayer}`, '#ff6666')
+        this.floatNumber(this.playerSprite.x, this.playerSprite.y - 50, `-${fx.dmgToPlayerHero}`, '#ff6666')
       }
     })
     add(120, () => {
-      if (res.healPlayer > 0) {
+      if (fx.healPlayer > 0) {
         this.fxHealBurst(this.playerSprite.x, this.playerSprite.y)
         this.flashSprite(this.playerSprite, 0x44ff88)
-        this.floatNumber(this.playerSprite.x, this.playerSprite.y - 70, `+${res.healPlayer}`, '#88ffaa')
+        this.floatNumber(this.playerSprite.x, this.playerSprite.y - 70, `+${fx.healPlayer}`, '#88ffaa')
       }
     })
     add(100, () => {
-      if (res.healEnemy > 0) {
+      if (fx.healEnemy > 0) {
         this.fxHealBurst(this.enemySprite.x, this.enemySprite.y)
         this.flashSprite(this.enemySprite, 0x44ff88)
-        this.floatNumber(this.enemySprite.x, this.enemySprite.y - 70, `+${res.healEnemy}`, '#88ffaa')
+        this.floatNumber(this.enemySprite.x, this.enemySprite.y - 70, `+${fx.healEnemy}`, '#88ffaa')
       }
     })
 
     this.time.delayedCall(acc + 120, done)
   }
 
-  private fxForCard(side: 'player' | 'enemy', card: CardDef, res: RoundResolution): void {
+  private fxForCard(side: 'player' | 'enemy', card: CardDef, fx: TurnFxTotals): void {
     const spr = side === 'player' ? this.playerSprite : this.enemySprite
-    if (card.type === 'attack') {
+    if (card.kind === 'minion') {
+      this.fxSkillCast(spr.x, spr.y)
+    } else if (card.type === 'attack') {
       this.fxSwingWeapon(spr)
     } else if (card.type === 'defense') {
       this.fxShield(spr.x, spr.y)
     } else {
       this.fxSkillCast(spr.x, spr.y)
     }
-    if (card.type === 'attack' && side === 'player' && res.dmgToEnemy > 0) {
+    if (card.type === 'attack' && side === 'player' && fx.dmgToEnemyHero > 0) {
       this.cameras.main.shake(80, 0.002)
     }
-    if (card.type === 'attack' && side === 'enemy' && res.dmgToPlayer > 0) {
+    if (card.type === 'attack' && side === 'enemy' && fx.dmgToPlayerHero > 0) {
       this.cameras.main.shake(80, 0.002)
     }
   }

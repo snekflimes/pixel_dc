@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie'
-import type { CardDef } from '../cardCombat/types'
+import type { CardDef, CardKind, MinionBattlecry } from '../cardCombat/types'
 import cardsSeedBundled from '../data/cardsSeed.json' with { type: 'json' }
 
 /** Локальное хранилище карт в браузере (IndexedDB через Dexie). Синхронный серверный SQL здесь не используется — FTP отдаёт только статику. */
@@ -30,16 +30,50 @@ function parseOneCard(o: unknown): CardDef {
   const x = o as Record<string, unknown>
   const id = String(x.id ?? '').trim()
   if (!id) throw new Error('У карты нужен непустой id')
+  const name = String(x.name ?? '')
+  const description = String(x.description ?? '')
+  const enabled = x.enabled === false ? false : true
+
+  const kindRaw = x.kind
+  const kind: CardKind | undefined =
+    kindRaw === 'minion' ? 'minion' : kindRaw === 'spell' ? 'spell' : undefined
+
   const t = x.type
   if (t !== 'attack' && t !== 'defense' && t !== 'skill') {
     throw new Error(`Карта ${id}: type должен быть attack | defense | skill`)
   }
   const type = t
-  const name = String(x.name ?? '')
-  const description = String(x.description ?? '')
-  const enabled = x.enabled === false ? false : true
 
   const card: CardDef = { id, name, type, description, enabled }
+  if (kind) {
+    card.kind = kind
+  }
+
+  if (card.kind === 'minion') {
+    card.minionAtk = Math.max(0, Math.round(num(x.minionAtk, 0)))
+    card.minionHp = Math.max(1, Math.round(num(x.minionHp, 1)))
+    const kw = x.keywords
+    if (kw && typeof kw === 'object') {
+      const kwo = kw as Record<string, unknown>
+      card.keywords = {
+        taunt: kwo.taunt === true,
+        divineShield: kwo.divineShield === true,
+        lifesteal: kwo.lifesteal === true,
+      }
+    }
+    const bc = x.battlecry
+    if (bc && typeof bc === 'object') {
+      const b = bc as Record<string, unknown>
+      const k = b.kind
+      const amt = Math.max(0, Math.round(num(b.amount, 0)))
+      if (k === 'damageEnemyHero' && amt > 0) {
+        card.battlecry = { kind: 'damageEnemyHero', amount: amt } satisfies MinionBattlecry
+      } else if (k === 'healPlayerHero' && amt > 0) {
+        card.battlecry = { kind: 'healPlayerHero', amount: amt } satisfies MinionBattlecry
+      }
+    }
+    return card
+  }
 
   if (type === 'attack') {
     card.damage = Math.max(0, Math.round(num(x.damage, 0)))

@@ -1,4 +1,4 @@
-import type { CardDef, CardType } from '../cardCombat/types'
+import type { CardDef, CardKind, CardType } from '../cardCombat/types'
 import {
   getAllCardsOrdered,
   resetCardsToDefault,
@@ -93,6 +93,7 @@ export async function openCardDatabaseEditor(): Promise<void> {
       id: `karta_${Date.now()}`,
       name: 'Новая карта',
       type: 'attack',
+      kind: 'spell',
       description: '',
       enabled: true,
       damage: 4,
@@ -100,17 +101,37 @@ export async function openCardDatabaseEditor(): Promise<void> {
   }
 
   function syncStatFields(c: CardDef): void {
+    if (c.kind === 'minion') {
+      delete c.damage
+      delete c.block
+      delete c.heal
+      if (c.minionAtk === undefined) c.minionAtk = 2
+      if (c.minionHp === undefined) c.minionHp = 2
+      return
+    }
     if (c.type === 'attack') {
       delete c.block
       delete c.heal
+      delete c.minionAtk
+      delete c.minionHp
+      delete c.keywords
+      delete c.battlecry
       if (c.damage === undefined) c.damage = 4
     } else if (c.type === 'defense') {
       delete c.damage
       delete c.heal
+      delete c.minionAtk
+      delete c.minionHp
+      delete c.keywords
+      delete c.battlecry
       if (c.block === undefined) c.block = 4
     } else {
       delete c.damage
       delete c.block
+      delete c.minionAtk
+      delete c.minionHp
+      delete c.keywords
+      delete c.battlecry
       if (c.heal === undefined) c.heal = 3
     }
   }
@@ -146,10 +167,44 @@ export async function openCardDatabaseEditor(): Promise<void> {
         card.name = v
       })
 
+      const fKind = document.createElement('div')
+      fKind.className = 'card-editor-field'
+      const lk = document.createElement('label')
+      lk.textContent = 'Вид карты'
+      const selKind = document.createElement('select')
+      ;(
+        [
+          ['spell', 'Заклинание'],
+          ['minion', 'Существо'],
+        ] as [CardKind, string][]
+      ).forEach(([val, lab]) => {
+        const o = document.createElement('option')
+        o.value = val
+        o.textContent = lab
+        selKind.append(o)
+      })
+      selKind.value = card.kind === 'minion' ? 'minion' : 'spell'
+      selKind.onchange = () => {
+        card.kind = selKind.value as CardKind
+        if (card.kind === 'minion') {
+          card.type = card.type || 'attack'
+          if (card.minionAtk === undefined) card.minionAtk = 2
+          if (card.minionHp === undefined) card.minionHp = 2
+        } else {
+          delete card.minionAtk
+          delete card.minionHp
+          delete card.keywords
+          delete card.battlecry
+        }
+        syncStatFields(card)
+        renderList()
+      }
+      fKind.append(lk, selKind)
+
       const fType = document.createElement('div')
       fType.className = 'card-editor-field'
       const lt = document.createElement('label')
-      lt.textContent = 'Тип'
+      lt.textContent = 'Тип (заклинание)'
       const sel = document.createElement('select')
       ;(
         [
@@ -170,6 +225,11 @@ export async function openCardDatabaseEditor(): Promise<void> {
         renderList()
       }
       fType.append(lt, sel)
+      if (card.kind === 'minion') {
+        sel.disabled = true
+      } else {
+        sel.disabled = false
+      }
 
       const fDesc = document.createElement('div')
       fDesc.className = 'card-editor-field card-editor-field-full'
@@ -199,9 +259,87 @@ export async function openCardDatabaseEditor(): Promise<void> {
       row.append(chk, lch)
       fEn.append(row)
 
-      grid.append(fId, fName, fType)
+      grid.append(fId, fName, fKind, fType)
 
-      if (card.type === 'attack') {
+      if (card.kind === 'minion') {
+        grid.append(
+          numField('Атака существа', card.minionAtk ?? 0, (n) => {
+            card.minionAtk = n
+          }),
+          numField('Здоровье', card.minionHp ?? 1, (n) => {
+            card.minionHp = Math.max(1, n)
+          })
+        )
+        const fKw = document.createElement('div')
+        fKw.className = 'card-editor-field card-editor-field-full'
+        const mkKw = (id: string, lab: string, key: 'taunt' | 'divineShield' | 'lifesteal') => {
+          const row = document.createElement('div')
+          row.className = 'card-editor-row'
+          const ch = document.createElement('input')
+          ch.type = 'checkbox'
+          ch.id = `${id}_${index}`
+          ch.checked = !!card.keywords?.[key]
+          ch.onchange = () => {
+            card.keywords = card.keywords ?? {}
+            card.keywords[key] = ch.checked
+          }
+          const lb = document.createElement('label')
+          lb.htmlFor = ch.id
+          lb.textContent = lab
+          row.append(ch, lb)
+          return row
+        }
+        const lkw = document.createElement('label')
+        lkw.textContent = 'Ключевые слова'
+        fKw.append(lkw)
+        fKw.append(
+          mkKw('taunt', 'Провокация', 'taunt'),
+          mkKw('ds', 'Божественный щит', 'divineShield'),
+          mkKw('ls', 'Похищение жизни', 'lifesteal')
+        )
+        const fBc = document.createElement('div')
+        fBc.className = 'card-editor-field card-editor-field-full'
+        const lbc = document.createElement('label')
+        lbc.textContent = 'Боевой клич (опционально)'
+        const rowBc = document.createElement('div')
+        rowBc.className = 'card-editor-row'
+        const selBc = document.createElement('select')
+        ;[
+          ['', '— нет —'],
+          ['damageEnemyHero', 'Урон по герою врага'],
+          ['healPlayerHero', 'Лечение вашего героя'],
+        ].forEach(([v, lab]) => {
+          const o = document.createElement('option')
+          o.value = v
+          o.textContent = lab
+          selBc.append(o)
+        })
+        selBc.value = card.battlecry?.kind ?? ''
+        const amtInp = document.createElement('input')
+        amtInp.type = 'number'
+        amtInp.min = '0'
+        amtInp.step = '1'
+        amtInp.value = String(card.battlecry?.amount ?? 0)
+        selBc.onchange = () => {
+          const k = selBc.value
+          if (!k) {
+            delete card.battlecry
+          } else {
+            card.battlecry = {
+              kind: k as 'damageEnemyHero' | 'healPlayerHero',
+              amount: Number(amtInp.value) || 0,
+            }
+          }
+        }
+        amtInp.oninput = () => {
+          if (card.battlecry) {
+            card.battlecry.amount = Math.max(0, Math.round(Number(amtInp.value) || 0))
+          }
+        }
+        rowBc.append(selBc, amtInp)
+        fBc.append(lbc, rowBc)
+        grid.append(fKw, fBc)
+      } else if (card.type === 'attack') {
         grid.append(
           numField('Урон', card.damage ?? 0, (n) => {
             card.damage = n

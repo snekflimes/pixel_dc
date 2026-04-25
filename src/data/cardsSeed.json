@@ -1,122 +1,196 @@
 [
   {
-    "id": "atk_strike",
-    "name": "Удар",
+    "id": "spell_fireball",
+    "name": "Огненный шар",
+    "kind": "spell",
     "type": "attack",
-    "description": "Базовая атака в духе Strike из Slay the Spire — простой и предсказуемый урон.",
-    "damage": 4,
+    "description": "Классика: прямой урон по герою (броня поглощает первым).",
+    "damage": 6,
     "enabled": true
   },
   {
-    "id": "atk_jab",
-    "name": "Толчок",
+    "id": "spell_frostbolt",
+    "name": "Ледяная стрела",
+    "kind": "spell",
     "type": "attack",
-    "description": "Быстрый короткий выпад — мало урона, стабильный темп.",
+    "description": "Надёжный урон средней силы.",
+    "damage": 5,
+    "enabled": true
+  },
+  {
+    "id": "spell_arcane_shot",
+    "name": "Чародейский выстрел",
+    "kind": "spell",
+    "type": "attack",
+    "description": "Быстрый дешёвый урон.",
     "damage": 3,
     "enabled": true
   },
   {
-    "id": "atk_quick",
-    "name": "Выпад",
+    "id": "spell_consecration",
+    "name": "Освящение",
+    "kind": "spell",
     "type": "attack",
-    "description": "Средний урон по скорости между Strike и тяжёлой атакой.",
-    "damage": 5,
+    "description": "Умеренный AoE-ритм в одну цель (герой).",
+    "damage": 4,
     "enabled": true
   },
   {
-    "id": "atk_bash",
-    "name": "Удар в корпус",
+    "id": "spell_pyroblast",
+    "name": "Огнеснос",
+    "kind": "spell",
     "type": "attack",
-    "description": "Отсылка к Bash: сильнее среднего удара.",
-    "damage": 6,
-    "enabled": true
-  },
-  {
-    "id": "atk_double",
-    "name": "Двойной удар",
-    "type": "attack",
-    "description": "По настрою как Twin Strike — суммарно ощутимый заход.",
-    "damage": 6,
-    "enabled": true
-  },
-  {
-    "id": "atk_cleave",
-    "name": "Рассечение",
-    "type": "attack",
-    "description": "Широкий замах (у нас один цель, но ритм как у Cleave).",
-    "damage": 5,
-    "enabled": true
-  },
-  {
-    "id": "atk_heavy",
-    "name": "Тяжёлый замах",
-    "type": "attack",
-    "description": "Высокий урон, по ощущениям как Heavy Blade в урезанном масштабе.",
-    "damage": 7,
-    "enabled": true
-  },
-  {
-    "id": "atk_finisher",
-    "name": "Добивание",
-    "type": "attack",
-    "description": "Редкий «дорогой» удар — пик урона в колоде.",
+    "description": "Тяжёлый финишер по герою.",
     "damage": 8,
     "enabled": true
   },
   {
-    "id": "atk_chop",
-    "name": "Рубящий удар",
-    "type": "attack",
-    "description": "Уверенный средний урон.",
-    "damage": 6,
+    "id": "spell_shield_block",
+    "name": "Блок щитом",
+    "kind": "spell",
+    "type": "defense",
+    "description": "Много брони на один ход.",
+    "block": 7,
     "enabled": true
   },
   {
-    "id": "def_guard",
-    "name": "Оборона",
+    "id": "spell_iron_hide",
+    "name": "Железная шкура",
+    "kind": "spell",
     "type": "defense",
-    "description": "Как Defend в StS — универсальный блок.",
-    "block": 4,
-    "enabled": true
-  },
-  {
-    "id": "def_parry",
-    "name": "Парирование",
-    "type": "defense",
-    "description": "Средний блок с упором на тайминг.",
-    "block": 5,
-    "enabled": true
-  },
-  {
-    "id": "def_barricade",
-    "name": "Бруствер",
-    "type": "defense",
-    "description": "Плотный блок — аналог сильной защитной карты.",
+    "description": "Плотная броня.",
     "block": 6,
     "enabled": true
   },
   {
-    "id": "skill_bandage",
-    "name": "Бинт",
-    "type": "skill",
-    "description": "Малый отхил, как расходник в подземельях.",
-    "heal": 3,
+    "id": "spell_barrier",
+    "name": "Барьер",
+    "kind": "spell",
+    "type": "defense",
+    "description": "Универсальная защита.",
+    "block": 5,
     "enabled": true
   },
   {
-    "id": "skill_rest",
-    "name": "Передышка",
+    "id": "spell_lesser_armor",
+    "name": "Лёгкий доспех",
+    "kind": "spell",
+    "type": "defense",
+    "description": "Небольшой запас брони.",
+    "block": 4,
+    "enabled": true
+  },
+  {
+    "id": "spell_healing_touch",
+    "name": "Исцеляющее прикосновение",
+    "kind": "spell",
     "type": "skill",
-    "description": "Умеренное восстановление — по весу ближе к «сейф»-ходу.",
+    "description": "Сильный отхил героя.",
+    "heal": 6,
+    "enabled": true
+  },
+  {
+    "id": "spell_heal",
+    "name": "Лечение",
+    "kind": "spell",
+    "type": "skill",
+    "description": "Базовый отхил.",
     "heal": 4,
     "enabled": true
   },
   {
-    "id": "skill_mend",
-    "name": "Перевязка",
+    "id": "spell_moonfire",
+    "name": "Лунный огонь",
+    "kind": "spell",
     "type": "skill",
-    "description": "Сильнее базового бинта — редкий большой отхил среди скиллов.",
-    "heal": 5,
+    "description": "Малый отхил + темп.",
+    "heal": 3,
+    "enabled": true
+  },
+  {
+    "id": "minion_chillwind",
+    "name": "Северный волк",
+    "kind": "minion",
+    "type": "attack",
+    "description": "Простое существо 2/2.",
+    "minionAtk": 2,
+    "minionHp": 2,
+    "enabled": true
+  },
+  {
+    "id": "minion_taunt_bear",
+    "name": "Медведь-страж",
+    "kind": "minion",
+    "type": "defense",
+    "description": "Провокация — враги бьют его в приоритете.",
+    "minionAtk": 2,
+    "minionHp": 4,
+    "keywords": { "taunt": true },
+    "enabled": true
+  },
+  {
+    "id": "minion_argent",
+    "name": "Среброкрыл",
+    "kind": "minion",
+    "type": "attack",
+    "description": "Божественный щит — первый удар не ранит.",
+    "minionAtk": 3,
+    "minionHp": 2,
+    "keywords": { "divineShield": true },
+    "enabled": true
+  },
+  {
+    "id": "minion_vampire",
+    "name": "Кровопийца",
+    "kind": "minion",
+    "type": "attack",
+    "description": "Похищение жизни — лечит героя на нанесённый урон.",
+    "minionAtk": 2,
+    "minionHp": 3,
+    "keywords": { "lifesteal": true },
+    "enabled": true
+  },
+  {
+    "id": "minion_leper",
+    "name": "Отброс",
+    "kind": "minion",
+    "type": "attack",
+    "description": "Слабое тело, но боевой клич бьёт по герою.",
+    "minionAtk": 2,
+    "minionHp": 1,
+    "battlecry": { "kind": "damageEnemyHero", "amount": 2 },
+    "enabled": true
+  },
+  {
+    "id": "minion_voodoo",
+    "name": "Знахарь",
+    "kind": "minion",
+    "type": "skill",
+    "description": "Клич лечит вашего героя.",
+    "minionAtk": 1,
+    "minionHp": 3,
+    "battlecry": { "kind": "healPlayerHero", "amount": 3 },
+    "enabled": true
+  },
+  {
+    "id": "minion_boulderfist",
+    "name": "Громила",
+    "kind": "minion",
+    "type": "attack",
+    "description": "Большой ванильный угроза.",
+    "minionAtk": 5,
+    "minionHp": 5,
+    "enabled": true
+  },
+  {
+    "id": "minion_frog",
+    "name": "Лягушка",
+    "kind": "minion",
+    "type": "skill",
+    "description": "Дешёвый блокер.",
+    "minionAtk": 1,
+    "minionHp": 2,
+    "keywords": { "taunt": true },
     "enabled": true
   }
 ]
